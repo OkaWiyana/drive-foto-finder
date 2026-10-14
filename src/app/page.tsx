@@ -14,17 +14,17 @@ import {
   Loader2,
   RefreshCw,
 } from "lucide-react";
-import { DriveFile, extractFolderId } from "@/lib/drive";
+import { DriveFile, extractFolderId, distanceToConfidence } from "@/lib/drive";
 import {
-  getCachedDescriptors,
-  setCachedDescriptors,
+  getCachedFaces,
+  setCachedFaces,
   clearAllDescriptorCache,
 } from "@/lib/cache";
 import { useFaceApi } from "@/hooks/useFaceApi";
-import { CameraCapture } from "@/components/CameraCapture";
+import { CameraCapture, TargetFaceItem } from "@/components/CameraCapture";
 import { DriveInput } from "@/components/DriveInput";
 import { ScanningProgress } from "@/components/ScanningProgress";
-import { PhotoCard, MatchedPhoto } from "@/components/PhotoCard";
+import { PhotoCard, MatchedPhoto, DetectedFaceBox } from "@/components/PhotoCard";
 import { PhotoPreviewModal } from "@/components/PhotoPreviewModal";
 
 export default function HomePage() {
@@ -42,15 +42,12 @@ export default function HomePage() {
     isModelLoaded,
     modelError,
     extractSingleDescriptor,
-    extractAllDescriptors,
+    extractAllFaces,
     calculateDistance,
   } = useFaceApi();
 
-  // Target Face State
-  const [targetPreviewUrl, setTargetPreviewUrl] = useState<string | null>(null);
-  const [targetDescriptor, setTargetDescriptor] = useState<Float32Array | null>(
-    null,
-  );
+  // Multi-Angle Target Faces State
+  const [targetFaces, setTargetFaces] = useState<TargetFaceItem[]>([]);
   const [detectionStatus, setDetectionStatus] = useState<
     "idle" | "detecting" | "success" | "error"
   >("idle");
@@ -121,12 +118,12 @@ export default function HomePage() {
     }
   };
 
-  // 2. Extract target face descriptor
-  const handleFaceSelected = async (
+  // 2. Add or Remove target face descriptor (supports multi-angle enrollment)
+  const handleAddTargetFace = async (
     imageElement: HTMLImageElement | HTMLCanvasElement,
     previewUrl: string,
+    label: string,
   ) => {
-    setTargetPreviewUrl(previewUrl);
     setDetectionStatus("detecting");
     setDetectionError(null);
     setScanValidationWarning(null);
@@ -136,11 +133,16 @@ export default function HomePage() {
       if (!descriptor) {
         setDetectionStatus("error");
         setDetectionError(
-          "Wajah tidak terdeteksi pada foto ini. Silakan coba foto lain dengan sudut lurus dan pencahayaan jelas.",
+          "Wajah tidak terdeteksi pada foto ini. Silakan coba foto lain dengan pencahayaan jelas.",
         );
-        setTargetDescriptor(null);
       } else {
-        setTargetDescriptor(descriptor);
+        const newFace: TargetFaceItem = {
+          id: Math.random().toString(36).substring(2, 9),
+          previewUrl,
+          descriptor,
+          label,
+        };
+        setTargetFaces((prev) => [...prev, newFace]);
         setDetectionStatus("success");
       }
     } catch (err: unknown) {
@@ -148,16 +150,17 @@ export default function HomePage() {
         err instanceof Error ? err.message : "Gagal memproses fitur wajah.";
       setDetectionStatus("error");
       setDetectionError(msg);
-      setTargetDescriptor(null);
     }
   };
 
-  const handleClearTargetFace = () => {
-    setTargetPreviewUrl(null);
-    setTargetDescriptor(null);
-    setDetectionStatus("idle");
-    setDetectionError(null);
-    setScanValidationWarning(null);
+  const handleRemoveTargetFace = (id: string) => {
+    setTargetFaces((prev) => {
+      const updated = prev.filter((f) => f.id !== id);
+      if (updated.length === 0) {
+        setDetectionStatus("idle");
+      }
+      return updated;
+    });
   };
 
   // 3. Start scanning with async concurrency pool
@@ -178,7 +181,7 @@ export default function HomePage() {
       return;
     }
 
-    if (!targetDescriptor) {
+    if (targetFaces.length === 0) {
       setScanValidationWarning(
         "Foto wajah target belum siap. Silakan ambil selfie atau unggah foto wajah Anda pada Langkah 2.",
       );
@@ -189,7 +192,8 @@ export default function HomePage() {
   };
 
   const startScan = async () => {
-    if (!targetDescriptor || driveFiles.length === 0) return;
+    const targetDescriptors = targetFaces.map((f) => f.descriptor);
+    if (targetDescriptors.length === 0 || driveFiles.length === 0) return;
 
     setIsScanning(true);
     setIsScanFinished(false);
@@ -209,9 +213,9 @@ export default function HomePage() {
 
       try {
         // Step A: Check local cache first
-        let descriptors = await getCachedDescriptors(file.id);
+        let faces = await getCachedFaces(file.id);
 
-        if (descriptors === null) {
+        if (faces === null) {
           // Step B: Fetch through proxy and detect
           const proxyUrl = file.thumbnailLink
             ? `/api/drive/image?url=${encodeURIComponent(file.thumbnailLink)}`
@@ -227,26 +231,47 @@ export default function HomePage() {
 
           if (abortController.signal.aborted) return;
 
-          descriptors = await extractAllDescriptors(img);
-          await setCachedDescriptors(file.id, descriptors);
+          faces = await extractAllFaces(img);
+          await setCachedFaces(file.id, faces);
         } else {
           setCachedCount((prev) => prev + 1);
         }
 
         if (abortController.signal.aborted) return;
 
-        // Step C: Compare Euclidean distance with target
+        // Step C: Compare Euclidean distance with ALL target descriptors for each face
+        const detectedFaces: DetectedFaceBox[] = faces.map((face) => {
+          let minDistanceForFace = Infinity;
+          for (const targetDesc of targetDescriptors) {
+            const d = calculateDistance(targetDesc, face.descriptor);
+            if (d < minDistanceForFace) minDistanceForFace = d;
+          }
+          return {
+            box: face.box,
+            distance: minDistanceForFace,
+            confidence: distanceToConfidence(minDistanceForFace),
+            isMatch: minDistanceForFace <= similarityThreshold,
+          };
+        });
+
+        // Find best photo distance
         let bestDistance = Infinity;
-        for (const desc of descriptors) {
-          const dist = calculateDistance(targetDescriptor, desc);
-          if (dist < bestDistance) {
-            bestDistance = dist;
+        for (const df of detectedFaces) {
+          if (df.distance < bestDistance) {
+            bestDistance = df.distance;
           }
         }
 
         if (bestDistance <= similarityThreshold) {
           setMatchedPhotos((prev) => {
-            const next = [...prev, { file, distance: bestDistance }];
+            const next = [
+              ...prev,
+              {
+                file,
+                distance: bestDistance,
+                detectedFaces,
+              },
+            ];
             return next.sort((a, b) => a.distance - b.distance);
           });
         }
@@ -289,7 +314,7 @@ export default function HomePage() {
 
   const isReady =
     !isScanning &&
-    targetDescriptor !== null &&
+    targetFaces.length > 0 &&
     driveFiles.length > 0 &&
     isModelLoaded;
 
@@ -363,12 +388,12 @@ export default function HomePage() {
             disabled={isScanning}
           />
 
-          {/* Step 2: Target Face Capture */}
+          {/* Step 2: Target Face Capture (Multi-Angle) */}
           <CameraCapture
-            onFaceSelected={handleFaceSelected}
+            targetFaces={targetFaces}
+            onAddFace={handleAddTargetFace}
+            onRemoveFace={handleRemoveTargetFace}
             isProcessing={detectionStatus === "detecting"}
-            selectedPreviewUrl={targetPreviewUrl}
-            onClear={handleClearTargetFace}
             detectionStatus={detectionStatus}
             errorMessage={detectionError}
             disabled={isScanning}
@@ -406,22 +431,22 @@ export default function HomePage() {
             {/* Checklist 2: Face Target */}
             <span
               className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium ${
-                targetDescriptor
+                targetFaces.length > 0
                   ? "bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300"
                   : "bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400"
               }`}
             >
               {detectionStatus === "detecting" ? (
                 <RefreshCw className="w-3.5 h-3.5 text-indigo-500 animate-spin" />
-              ) : targetDescriptor ? (
+              ) : targetFaces.length > 0 ? (
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
               ) : (
                 <Clock className="w-3.5 h-3.5 text-zinc-400" />
               )}
               {detectionStatus === "detecting"
                 ? "Menganalisis Foto Wajah..."
-                : targetDescriptor
-                  ? "Wajah Target Siap"
+                : targetFaces.length > 0
+                  ? `${targetFaces.length} Wajah Target Siap`
                   : "Langkah 2: Belum Ada Foto Wajah"}
             </span>
 

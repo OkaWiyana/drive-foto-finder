@@ -13,6 +13,18 @@ async function getFaceApi(): Promise<typeof FaceApiType> {
   return mod;
 }
 
+export interface FaceDetail {
+  descriptor: Float32Array;
+  box: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    imageWidth: number;
+    imageHeight: number;
+  };
+}
+
 export function useFaceApi() {
   const [isModelLoading, setIsModelLoading] = useState(false);
   const [isModelLoaded, setIsModelLoaded] = useState(false);
@@ -133,31 +145,34 @@ export function useFaceApi() {
     [loadModels],
   );
 
-  const extractAllDescriptors = useCallback(
+  const extractAllFaces = useCallback(
     async (
       input: HTMLImageElement | HTMLCanvasElement,
-    ): Promise<Float32Array[]> => {
+    ): Promise<FaceDetail[]> => {
       const faceapi = await getFaceApi();
       if (!faceapi.nets.ssdMobilenetv1.isLoaded || !faceapi.nets.tinyFaceDetector.isLoaded) {
         await loadModels();
       }
 
-      // Pass 1: SSD MobileNet (high precision for close & medium faces, zero hallucination)
+      const imgWidth = "naturalWidth" in input ? input.naturalWidth || input.width : input.width;
+      const imgHeight = "naturalHeight" in input ? input.naturalHeight || input.height : input.height;
+
+      // Pass 1: SSD MobileNet (minConfidence 0.28 to detect 3/4 profiles and clear faces)
       const ssdResults = await faceapi
         .detectAllFaces(
           input,
-          new faceapi.SsdMobilenetv1Options({ minConfidence: 0.35 }),
+          new faceapi.SsdMobilenetv1Options({ minConfidence: 0.28 }),
         )
         .withFaceLandmarks()
         .withFaceDescriptors();
 
-      // Pass 2: TinyFaceDetector with large inputSize (high resolution to catch small group faces)
+      // Pass 2: TinyFaceDetector with large inputSize (to detect distant/group and angled faces)
       const tinyResults = await faceapi
         .detectAllFaces(
           input,
           new faceapi.TinyFaceDetectorOptions({
             inputSize: 832,
-            scoreThreshold: 0.45,
+            scoreThreshold: 0.38,
           }),
         )
         .withFaceLandmarks()
@@ -190,47 +205,59 @@ export function useFaceApi() {
         }
       }
 
-      // Anti-Slop / Anti-Hallucination Filter:
-      // Verify valid human face geometry to reject non-face clutter, patterns, or foliage
-      const verifiedDescriptors: Float32Array[] = [];
+      // Filter: Validate human face geometry (angle-invariant)
+      const verifiedFaces: FaceDetail[] = [];
 
       for (const face of merged) {
         const box = face.detection.box;
 
-        // Minimum dimensions: Face must be at least 20x20 px
-        if (box.width < 20 || box.height < 20) continue;
+        // Minimum dimensions: Face must be at least 18x18 px
+        if (box.width < 18 || box.height < 18) continue;
 
-        // Aspect ratio: Human faces have width/height ratio between 0.50 and 1.50
+        // Aspect ratio: Human faces have width/height ratio between 0.45 and 1.65 (covers tilted & side angles)
         const aspect = box.width / box.height;
-        if (aspect < 0.5 || aspect > 1.5) continue;
+        if (aspect < 0.45 || aspect > 1.65) continue;
 
-        // Landmark validation: Check eye distance and facial proportions
+        // Landmark validation: Check landmark span to reject random collapsed textures/patterns
         const landmarks = face.landmarks;
         if (landmarks && landmarks.positions.length >= 68) {
-          // Left eye is ~point 36-41, Right eye is ~point 42-47
-          const leftEye = landmarks.positions[36];
-          const rightEye = landmarks.positions[45];
-          const mouth = landmarks.positions[57]; // Bottom of mouth
+          const xs = landmarks.positions.map((p) => p.x);
+          const ys = landmarks.positions.map((p) => p.y);
+          const landmarkSpanW = Math.max(...xs) - Math.min(...xs);
+          const landmarkSpanH = Math.max(...ys) - Math.min(...ys);
 
-          const eyeDist = Math.hypot(
-            rightEye.x - leftEye.x,
-            rightEye.y - leftEye.y,
-          );
-
-          // Eyes must be separated by at least 4 pixels
-          if (eyeDist < 4) continue;
-
-          // Mouth must be below the eyes
-          const avgEyeY = (leftEye.y + rightEye.y) / 2;
-          if (mouth.y <= avgEyeY) continue;
+          // Landmarks must span at least 25% of the box dimensions (works on side angles and tilted heads)
+          if (landmarkSpanW < box.width * 0.25 || landmarkSpanH < box.height * 0.25) {
+            continue;
+          }
         }
 
-        verifiedDescriptors.push(face.descriptor);
+        verifiedFaces.push({
+          descriptor: face.descriptor,
+          box: {
+            x: Math.round(box.x),
+            y: Math.round(box.y),
+            width: Math.round(box.width),
+            height: Math.round(box.height),
+            imageWidth: imgWidth || 800,
+            imageHeight: imgHeight || 600,
+          },
+        });
       }
 
-      return verifiedDescriptors;
+      return verifiedFaces;
     },
     [loadModels],
+  );
+
+  const extractAllDescriptors = useCallback(
+    async (
+      input: HTMLImageElement | HTMLCanvasElement,
+    ): Promise<Float32Array[]> => {
+      const faces = await extractAllFaces(input);
+      return faces.map((f) => f.descriptor);
+    },
+    [extractAllFaces],
   );
 
   const calculateDistance = useCallback(
@@ -254,6 +281,7 @@ export function useFaceApi() {
     modelError,
     loadModels,
     extractSingleDescriptor,
+    extractAllFaces,
     extractAllDescriptors,
     calculateDistance,
   };

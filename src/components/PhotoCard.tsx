@@ -4,9 +4,24 @@ import React from "react";
 import { Download, Eye, ExternalLink } from "lucide-react";
 import { DriveFile, distanceToConfidence } from "@/lib/drive";
 
+export interface DetectedFaceBox {
+  box: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    imageWidth: number;
+    imageHeight: number;
+  };
+  distance: number;
+  confidence: number;
+  isMatch: boolean;
+}
+
 export interface MatchedPhoto {
   file: DriveFile;
   distance: number;
+  detectedFaces?: DetectedFaceBox[];
 }
 
 interface PhotoCardProps {

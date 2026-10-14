@@ -1,14 +1,30 @@
 import { get, set, clear } from "idb-keyval";
+import { FaceDetail } from "@/hooks/useFaceApi";
 
-const CACHE_PREFIX = "drive_face_v4_";
+const CACHE_PREFIX = "drive_face_v5_";
 
-export async function getCachedDescriptors(
+interface RawCachedItem {
+  descriptor: number[];
+  box: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    imageWidth: number;
+    imageHeight: number;
+  };
+}
+
+export async function getCachedFaces(
   fileId: string,
-): Promise<Float32Array[] | null> {
+): Promise<FaceDetail[] | null> {
   try {
-    const raw = await get<number[][]>(`${CACHE_PREFIX}${fileId}`);
+    const raw = await get<RawCachedItem[]>(`${CACHE_PREFIX}${fileId}`);
     if (raw !== undefined && Array.isArray(raw)) {
-      return raw.map((arr) => new Float32Array(arr));
+      return raw.map((item) => ({
+        descriptor: new Float32Array(item.descriptor),
+        box: item.box,
+      }));
     }
   } catch (err) {
     console.warn("Gagal membaca cache IndexedDB:", err);
@@ -16,12 +32,15 @@ export async function getCachedDescriptors(
   return null;
 }
 
-export async function setCachedDescriptors(
+export async function setCachedFaces(
   fileId: string,
-  descriptors: Float32Array[],
+  faces: FaceDetail[],
 ): Promise<void> {
   try {
-    const raw = descriptors.map((d) => Array.from(d));
+    const raw: RawCachedItem[] = faces.map((f) => ({
+      descriptor: Array.from(f.descriptor),
+      box: f.box,
+    }));
     await set(`${CACHE_PREFIX}${fileId}`, raw);
   } catch (err) {
     console.warn("Gagal menyimpan cache IndexedDB:", err);
@@ -35,3 +54,4 @@ export async function clearAllDescriptorCache(): Promise<void> {
     console.warn("Gagal membersihkan cache IndexedDB:", err);
   }
 }
+
