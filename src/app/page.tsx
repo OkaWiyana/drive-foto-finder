@@ -11,18 +11,20 @@ import {
   CheckCircle2,
   Clock,
   HelpCircle,
+  Loader2,
+  RefreshCw,
 } from "lucide-react";
-import { DriveFile, extractFolderId } from "@/lib/drive";
+import { DriveFile, extractFolderId, distanceToConfidence } from "@/lib/drive";
 import {
-  getCachedDescriptors,
-  setCachedDescriptors,
+  getCachedFaces,
+  setCachedFaces,
   clearAllDescriptorCache,
 } from "@/lib/cache";
 import { useFaceApi } from "@/hooks/useFaceApi";
-import { CameraCapture } from "@/components/CameraCapture";
+import { CameraCapture, TargetFaceItem } from "@/components/CameraCapture";
 import { DriveInput } from "@/components/DriveInput";
 import { ScanningProgress } from "@/components/ScanningProgress";
-import { PhotoCard, MatchedPhoto } from "@/components/PhotoCard";
+import { PhotoCard, MatchedPhoto, DetectedFaceBox } from "@/components/PhotoCard";
 import { PhotoPreviewModal } from "@/components/PhotoPreviewModal";
 
 export default function HomePage() {
@@ -40,15 +42,12 @@ export default function HomePage() {
     isModelLoaded,
     modelError,
     extractSingleDescriptor,
-    extractAllDescriptors,
+    extractAllFaces,
     calculateDistance,
   } = useFaceApi();
 
-  // Target Face State
-  const [targetPreviewUrl, setTargetPreviewUrl] = useState<string | null>(null);
-  const [targetDescriptor, setTargetDescriptor] = useState<Float32Array | null>(
-    null,
-  );
+  // Multi-Angle Target Faces State
+  const [targetFaces, setTargetFaces] = useState<TargetFaceItem[]>([]);
   const [detectionStatus, setDetectionStatus] = useState<
     "idle" | "detecting" | "success" | "error"
   >("idle");
@@ -60,7 +59,7 @@ export default function HomePage() {
   const [scannedCount, setScannedCount] = useState(0);
   const [cachedCount, setCachedCount] = useState(0);
   const [matchedPhotos, setMatchedPhotos] = useState<MatchedPhoto[]>([]);
-  const [similarityThreshold, setSimilarityThreshold] = useState<number>(0.48);
+  const [similarityThreshold, setSimilarityThreshold] = useState<number>(0.42);
   const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
   const [scanValidationWarning, setScanValidationWarning] = useState<
     string | null
@@ -70,8 +69,33 @@ export default function HomePage() {
   // Modal Preview State
   const [previewPhoto, setPreviewPhoto] = useState<MatchedPhoto | null>(null);
 
-  // Abort controller ref
+  // Abort controller & all scanned results ref for dynamic re-filtering
   const abortControllerRef = useRef<AbortController | null>(null);
+  const allScanResultsRef = useRef<
+    Array<{
+      file: DriveFile;
+      distance: number;
+      detectedFaces: DetectedFaceBox[];
+    }>
+  >([]);
+
+  // Dynamically re-filter matched photos when similarity threshold is adjusted
+  React.useEffect(() => {
+    if (allScanResultsRef.current.length > 0 && !isScanning) {
+      const updated = allScanResultsRef.current
+        .map((item) => ({
+          ...item,
+          detectedFaces: item.detectedFaces.map((f) => ({
+            ...f,
+            isMatch: f.distance <= similarityThreshold,
+          })),
+        }))
+        .filter((item) => item.distance <= similarityThreshold)
+        .sort((a, b) => a.distance - b.distance);
+
+      setMatchedPhotos(updated);
+    }
+  }, [similarityThreshold, isScanning]);
 
   // 1. Fetch files from Drive
   const handleFetchFiles = async () => {
@@ -119,12 +143,12 @@ export default function HomePage() {
     }
   };
 
-  // 2. Extract target face descriptor
-  const handleFaceSelected = async (
+  // 2. Add or Remove target face descriptor (supports multi-angle enrollment)
+  const handleAddTargetFace = async (
     imageElement: HTMLImageElement | HTMLCanvasElement,
     previewUrl: string,
+    label: string,
   ) => {
-    setTargetPreviewUrl(previewUrl);
     setDetectionStatus("detecting");
     setDetectionError(null);
     setScanValidationWarning(null);
@@ -134,11 +158,16 @@ export default function HomePage() {
       if (!descriptor) {
         setDetectionStatus("error");
         setDetectionError(
-          "Wajah tidak terdeteksi pada foto ini. Silakan coba foto lain dengan sudut lurus dan pencahayaan jelas.",
+          "Wajah tidak terdeteksi pada foto ini. Silakan coba foto lain dengan pencahayaan jelas.",
         );
-        setTargetDescriptor(null);
       } else {
-        setTargetDescriptor(descriptor);
+        const newFace: TargetFaceItem = {
+          id: Math.random().toString(36).substring(2, 9),
+          previewUrl,
+          descriptor,
+          label,
+        };
+        setTargetFaces((prev) => [...prev, newFace]);
         setDetectionStatus("success");
       }
     } catch (err: unknown) {
@@ -146,16 +175,17 @@ export default function HomePage() {
         err instanceof Error ? err.message : "Gagal memproses fitur wajah.";
       setDetectionStatus("error");
       setDetectionError(msg);
-      setTargetDescriptor(null);
     }
   };
 
-  const handleClearTargetFace = () => {
-    setTargetPreviewUrl(null);
-    setTargetDescriptor(null);
-    setDetectionStatus("idle");
-    setDetectionError(null);
-    setScanValidationWarning(null);
+  const handleRemoveTargetFace = (id: string) => {
+    setTargetFaces((prev) => {
+      const updated = prev.filter((f) => f.id !== id);
+      if (updated.length === 0) {
+        setDetectionStatus("idle");
+      }
+      return updated;
+    });
   };
 
   // 3. Start scanning with async concurrency pool
@@ -176,7 +206,7 @@ export default function HomePage() {
       return;
     }
 
-    if (!targetDescriptor) {
+    if (targetFaces.length === 0) {
       setScanValidationWarning(
         "Foto wajah target belum siap. Silakan ambil selfie atau unggah foto wajah Anda pada Langkah 2.",
       );
@@ -187,13 +217,15 @@ export default function HomePage() {
   };
 
   const startScan = async () => {
-    if (!targetDescriptor || driveFiles.length === 0) return;
+    const targetDescriptors = targetFaces.map((f) => f.descriptor);
+    if (targetDescriptors.length === 0 || driveFiles.length === 0) return;
 
     setIsScanning(true);
     setIsScanFinished(false);
     setScannedCount(0);
     setCachedCount(0);
     setMatchedPhotos([]);
+    allScanResultsRef.current = [];
 
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
@@ -207,12 +239,12 @@ export default function HomePage() {
 
       try {
         // Step A: Check local cache first
-        let descriptors = await getCachedDescriptors(file.id);
+        let faces = await getCachedFaces(file.id);
 
-        if (descriptors === null) {
+        if (faces === null) {
           // Step B: Fetch through proxy and detect
           const proxyUrl = file.thumbnailLink
-            ? `/api/drive/image?url=${encodeURIComponent(file.thumbnailLink)}`
+            ? `/api/drive/image?url=${encodeURIComponent(file.thumbnailLink)}&fileId=${file.id}`
             : `/api/drive/image?fileId=${file.id}`;
 
           const img = await new Promise<HTMLImageElement>((resolve, reject) => {
@@ -225,26 +257,54 @@ export default function HomePage() {
 
           if (abortController.signal.aborted) return;
 
-          descriptors = await extractAllDescriptors(img);
-          await setCachedDescriptors(file.id, descriptors);
+          faces = await extractAllFaces(img);
+          await setCachedFaces(file.id, faces);
         } else {
           setCachedCount((prev) => prev + 1);
         }
 
         if (abortController.signal.aborted) return;
 
-        // Step C: Compare Euclidean distance with target
+        // Step C: Compare Euclidean distance with ALL target descriptors for each face
+        const detectedFaces: DetectedFaceBox[] = faces.map((face) => {
+          let minDistanceForFace = Infinity;
+          for (const targetDesc of targetDescriptors) {
+            const d = calculateDistance(targetDesc, face.descriptor);
+            if (d < minDistanceForFace) minDistanceForFace = d;
+          }
+          return {
+            box: face.box,
+            distance: minDistanceForFace,
+            confidence: distanceToConfidence(minDistanceForFace),
+            isMatch: minDistanceForFace <= similarityThreshold,
+          };
+        });
+
+        // Find best photo distance
         let bestDistance = Infinity;
-        for (const desc of descriptors) {
-          const dist = calculateDistance(targetDescriptor, desc);
-          if (dist < bestDistance) {
-            bestDistance = dist;
+        for (const df of detectedFaces) {
+          if (df.distance < bestDistance) {
+            bestDistance = df.distance;
           }
         }
 
+        // Record all scanned results for real-time dynamic slider adjustment
+        allScanResultsRef.current.push({
+          file,
+          distance: bestDistance,
+          detectedFaces,
+        });
+
         if (bestDistance <= similarityThreshold) {
           setMatchedPhotos((prev) => {
-            const next = [...prev, { file, distance: bestDistance }];
+            const next = [
+              ...prev,
+              {
+                file,
+                distance: bestDistance,
+                detectedFaces,
+              },
+            ];
             return next.sort((a, b) => a.distance - b.distance);
           });
         }
@@ -287,7 +347,7 @@ export default function HomePage() {
 
   const isReady =
     !isScanning &&
-    targetDescriptor !== null &&
+    targetFaces.length > 0 &&
     driveFiles.length > 0 &&
     isModelLoaded;
 
@@ -358,16 +418,18 @@ export default function HomePage() {
             totalFiles={driveFilesCount}
             errorMessage={driveError}
             detectedFolderId={activeFolderId}
+            disabled={isScanning}
           />
 
-          {/* Step 2: Target Face Capture */}
+          {/* Step 2: Target Face Capture (Multi-Angle) */}
           <CameraCapture
-            onFaceSelected={handleFaceSelected}
+            targetFaces={targetFaces}
+            onAddFace={handleAddTargetFace}
+            onRemoveFace={handleRemoveTargetFace}
             isProcessing={detectionStatus === "detecting"}
-            selectedPreviewUrl={targetPreviewUrl}
-            onClear={handleClearTargetFace}
             detectionStatus={detectionStatus}
             errorMessage={detectionError}
+            disabled={isScanning}
           />
         </div>
 
@@ -402,19 +464,23 @@ export default function HomePage() {
             {/* Checklist 2: Face Target */}
             <span
               className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium ${
-                targetDescriptor
+                targetFaces.length > 0
                   ? "bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300"
                   : "bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400"
               }`}
             >
-              {targetDescriptor ? (
+              {detectionStatus === "detecting" ? (
+                <RefreshCw className="w-3.5 h-3.5 text-indigo-500 animate-spin" />
+              ) : targetFaces.length > 0 ? (
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
               ) : (
                 <Clock className="w-3.5 h-3.5 text-zinc-400" />
               )}
-              {targetDescriptor
-                ? "Wajah Target Siap"
-                : "Langkah 2: Belum Ada Foto Wajah"}
+              {detectionStatus === "detecting"
+                ? "Menganalisis Foto Wajah..."
+                : targetFaces.length > 0
+                  ? `${targetFaces.length} Wajah Target Siap`
+                  : "Langkah 2: Belum Ada Foto Wajah"}
             </span>
 
             {/* Checklist 3: AI Model */}
@@ -447,7 +513,8 @@ export default function HomePage() {
               <button
                 type="button"
                 onClick={() => setShowAdvancedSettings(!showAdvancedSettings)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200 rounded-lg border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+                disabled={isScanning}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200 rounded-lg border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none"
               >
                 <Sliders className="w-3.5 h-3.5" />
                 Pengaturan Toleransi
@@ -456,8 +523,9 @@ export default function HomePage() {
               <button
                 type="button"
                 onClick={handleClearCache}
+                disabled={isScanning}
                 title="Bersihkan cache vektor wajah IndexedDB"
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs text-zinc-500 hover:text-rose-600 dark:hover:text-rose-400 rounded-lg hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs text-zinc-500 hover:text-rose-600 dark:hover:text-rose-400 rounded-lg hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none"
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 Bersihkan Cache
@@ -468,19 +536,33 @@ export default function HomePage() {
             <button
               type="button"
               onClick={handleStartScanClick}
-              disabled={isScanning}
+              disabled={isScanning || detectionStatus === "detecting" || !isReady}
               className={`w-full sm:w-auto px-6 py-3 text-white text-xs sm:text-sm font-semibold rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 ${
-                isReady
-                  ? "bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 cursor-pointer"
-                  : "bg-zinc-700 hover:bg-zinc-600 cursor-pointer"
+                isScanning || detectionStatus === "detecting"
+                  ? "bg-zinc-700 opacity-60 cursor-not-allowed pointer-events-none shadow-none"
+                  : isReady
+                    ? "bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 cursor-pointer"
+                    : "bg-zinc-700 opacity-40 cursor-not-allowed pointer-events-none shadow-none"
               }`}
             >
-              <Play className="w-4 h-4 fill-current" />
-              {isScanning
-                ? "Sedang Memindai..."
-                : isReady
-                  ? `Mulai Pindai (${driveFiles.length} Foto)`
-                  : "Mulai Pindai Foto"}
+              {detectionStatus === "detecting" ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin text-indigo-300" />
+                  Menganalisis Foto Wajah...
+                </>
+              ) : isScanning ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Sedang Memindai...
+                </>
+              ) : (
+                <>
+                  <Play className="w-4 h-4 fill-current" />
+                  {isReady
+                    ? `Mulai Pindai (${driveFiles.length} Foto)`
+                    : "Mulai Pindai Foto"}
+                </>
+              )}
             </button>
           </div>
 
@@ -503,54 +585,56 @@ export default function HomePage() {
               <div className="flex flex-wrap gap-2 mb-3">
                 <button
                   type="button"
-                  onClick={() => setSimilarityThreshold(0.44)}
-                  className={`px-2.5 py-1 text-[11px] rounded-lg border font-medium transition-colors ${
-                    similarityThreshold === 0.44
+                  disabled={isScanning}
+                  onClick={() => setSimilarityThreshold(0.38)}
+                  className={`px-2.5 py-1 text-[11px] rounded-lg border font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none ${
+                    similarityThreshold === 0.38
                       ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
                       : "bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200"
                   }`}
                 >
-                  Ketat (0.44) - Hanya wajah sangat mirip
+                  Sangat Ketat (0.38) - Hanya Wajah Jelas
                 </button>
                 <button
                   type="button"
-                  onClick={() => setSimilarityThreshold(0.48)}
-                  className={`px-2.5 py-1 text-[11px] rounded-lg border font-medium transition-colors ${
-                    similarityThreshold === 0.48
+                  disabled={isScanning}
+                  onClick={() => setSimilarityThreshold(0.42)}
+                  className={`px-2.5 py-1 text-[11px] rounded-lg border font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none ${
+                    similarityThreshold === 0.42
                       ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
                       : "bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200"
                   }`}
                 >
-                  Standar (0.48) - Rekomendasi
+                  Standar Akurat (0.42) - Rekomendasi
                 </button>
                 <button
                   type="button"
-                  onClick={() => setSimilarityThreshold(0.52)}
-                  className={`px-2.5 py-1 text-[11px] rounded-lg border font-medium transition-colors ${
-                    similarityThreshold === 0.52
+                  disabled={isScanning}
+                  onClick={() => setSimilarityThreshold(0.46)}
+                  className={`px-2.5 py-1 text-[11px] rounded-lg border font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none ${
+                    similarityThreshold === 0.46
                       ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
                       : "bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200"
                   }`}
                 >
-                  Longgar (0.52) - Lebih banyak hasil
+                  Fleksibel (0.46) - Termasuk Foto Jauh / Miring
                 </button>
               </div>
 
               <input
                 type="range"
-                min="0.38"
-                max="0.58"
-                step="0.02"
+                min="0.36"
+                max="0.50"
+                step="0.01"
+                disabled={isScanning}
                 value={similarityThreshold}
                 onChange={(e) =>
                   setSimilarityThreshold(parseFloat(e.target.value))
                 }
-                className="w-full h-1.5 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                className="w-full h-1.5 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-indigo-600 disabled:opacity-40 disabled:cursor-not-allowed"
               />
               <p className="text-[11px] text-zinc-500 mt-1.5">
-                Pilih mode <strong>Ketat (0.44)</strong> jika muncul foto orang
-                lain. Gunakan <strong>Standar (0.48)</strong> jika ingin
-                toleransi kemiringan kepala atau pencahayaan yang berbeda.
+                Nilai threshold lebih kecil (misal <strong>0.39 - 0.43</strong>) menjamin hanya wajah Anda yang lolos dan menyaring orang lain atau background.
               </p>
             </div>
           )}
