@@ -27,6 +27,8 @@ export function CameraCapture({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  const isStartingRef = useRef(false);
+
   const stopCamera = useCallback(() => {
     if (stream) {
       stream.getTracks().forEach((track) => track.stop());
@@ -36,11 +38,15 @@ export function CameraCapture({
   }, [stream]);
 
   const startCamera = useCallback(async () => {
+    if (isStartingRef.current) return;
+    isStartingRef.current = true;
+    setCameraError(null);
+
     // Stop existing stream if any
     if (stream) {
       stream.getTracks().forEach((t) => t.stop());
+      setStream(null);
     }
-    setCameraError(null);
 
     try {
       const mediaStream = await navigator.mediaDevices.getUserMedia({
@@ -56,6 +62,7 @@ export function CameraCapture({
       setIsCameraActive(true);
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream;
+        videoRef.current.play().catch(() => {});
       }
     } catch (err: unknown) {
       const msg =
@@ -64,30 +71,29 @@ export function CameraCapture({
           : "Tidak dapat mengakses kamera. Periksa izin perangkat.";
       setCameraError(msg);
       setIsCameraActive(false);
+    } finally {
+      isStartingRef.current = false;
     }
   }, [stream]);
 
-  // Keep video element connected to mediaStream whenever ref mounts or stream updates
-  const setVideoElement = useCallback(
-    (node: HTMLVideoElement | null) => {
-      videoRef.current = node;
-      if (node && stream) {
-        node.srcObject = stream;
-      }
-    },
-    [stream]
-  );
-
-  // Automatically start camera when in camera mode and no photo is selected
+  // Keep video element connected and playing whenever stream or DOM changes
   useEffect(() => {
-    let active = true;
+    if (videoRef.current && stream && !selectedPreviewUrl && mode === "camera") {
+      if (videoRef.current.srcObject !== stream) {
+        videoRef.current.srcObject = stream;
+      }
+      videoRef.current.play().catch(() => {});
+    }
+  }, [stream, selectedPreviewUrl, mode]);
+
+  // Automatically start or stop camera based on active mode & selected preview
+  useEffect(() => {
     if (mode === "camera" && !selectedPreviewUrl) {
       startCamera();
     } else {
       stopCamera();
     }
     return () => {
-      active = false;
       stopCamera();
     };
   }, [mode, selectedPreviewUrl]);
@@ -131,12 +137,6 @@ export function CameraCapture({
 
   const handleClear = () => {
     onClear();
-    if (mode === "camera") {
-      // Re-trigger camera immediately
-      setTimeout(() => {
-        startCamera();
-      }, 50);
-    }
   };
 
   return (
@@ -254,10 +254,13 @@ export function CameraCapture({
               <div className="w-full flex flex-col items-center">
                 <div className="relative w-full max-w-sm aspect-square bg-zinc-950 rounded-xl overflow-hidden shadow-inner flex items-center justify-center">
                   <video
-                    ref={setVideoElement}
+                    ref={videoRef}
                     autoPlay
                     playsInline
                     muted
+                    onLoadedMetadata={(e) => {
+                      (e.target as HTMLVideoElement).play().catch(() => {});
+                    }}
                     className="w-full h-full object-cover -scale-x-100"
                   />
                   {/* Subtle face frame guide */}

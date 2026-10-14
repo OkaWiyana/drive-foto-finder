@@ -60,7 +60,7 @@ export default function HomePage() {
   const [scannedCount, setScannedCount] = useState(0);
   const [cachedCount, setCachedCount] = useState(0);
   const [matchedPhotos, setMatchedPhotos] = useState<MatchedPhoto[]>([]);
-  const [similarityThreshold, setSimilarityThreshold] = useState<number>(0.48);
+  const [similarityThreshold, setSimilarityThreshold] = useState<number>(0.43);
   const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
   const [scanValidationWarning, setScanValidationWarning] = useState<
     string | null
@@ -503,44 +503,44 @@ export default function HomePage() {
               <div className="flex flex-wrap gap-2 mb-3">
                 <button
                   type="button"
-                  onClick={() => setSimilarityThreshold(0.44)}
+                  onClick={() => setSimilarityThreshold(0.39)}
                   className={`px-2.5 py-1 text-[11px] rounded-lg border font-medium transition-colors ${
-                    similarityThreshold === 0.44
+                    similarityThreshold === 0.39
                       ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
                       : "bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200"
                   }`}
                 >
-                  Ketat (0.44) - Hanya wajah sangat mirip
+                  Sangat Ketat (0.39) - Tanpa Toleransi
                 </button>
                 <button
                   type="button"
-                  onClick={() => setSimilarityThreshold(0.48)}
+                  onClick={() => setSimilarityThreshold(0.43)}
                   className={`px-2.5 py-1 text-[11px] rounded-lg border font-medium transition-colors ${
-                    similarityThreshold === 0.48
+                    similarityThreshold === 0.43
                       ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
                       : "bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200"
                   }`}
                 >
-                  Standar (0.48) - Rekomendasi
+                  Standar Akurat (0.43) - Rekomendasi
                 </button>
                 <button
                   type="button"
-                  onClick={() => setSimilarityThreshold(0.52)}
+                  onClick={() => setSimilarityThreshold(0.46)}
                   className={`px-2.5 py-1 text-[11px] rounded-lg border font-medium transition-colors ${
-                    similarityThreshold === 0.52
+                    similarityThreshold === 0.46
                       ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
                       : "bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200"
                   }`}
                 >
-                  Longgar (0.52) - Lebih banyak hasil
+                  Fleksibel (0.46) - Foto Miring/Gelap
                 </button>
               </div>
 
               <input
                 type="range"
-                min="0.38"
-                max="0.58"
-                step="0.02"
+                min="0.36"
+                max="0.50"
+                step="0.01"
                 value={similarityThreshold}
                 onChange={(e) =>
                   setSimilarityThreshold(parseFloat(e.target.value))
@@ -548,9 +548,7 @@ export default function HomePage() {
                 className="w-full h-1.5 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-indigo-600"
               />
               <p className="text-[11px] text-zinc-500 mt-1.5">
-                Pilih mode <strong>Ketat (0.44)</strong> jika muncul foto orang
-                lain. Gunakan <strong>Standar (0.48)</strong> jika ingin
-                toleransi kemiringan kepala atau pencahayaan yang berbeda.
+                Nilai threshold lebih kecil (misal <strong>0.39 - 0.43</strong>) menjamin hanya wajah Anda yang lolos dan menyaring orang lain atau background.
               </p>
             </div>
           )}

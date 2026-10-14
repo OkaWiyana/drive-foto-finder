@@ -1,6 +1,6 @@
 import { get, set, clear } from "idb-keyval";
 
-const CACHE_PREFIX = "drive_face_v2_";
+const CACHE_PREFIX = "drive_face_v4_";
 
 export async function getCachedDescriptors(
   fileId: string,

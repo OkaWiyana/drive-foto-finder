@@ -59,12 +59,15 @@ export function getOptimizedThumbnail(
 }
 
 export function distanceToConfidence(distance: number): number {
-  // Standard monotonic calibration for FaceNet Euclidean distance:
-  // dist <= 0.20 -> 90-99%
-  // dist 0.30 -> ~80%
-  // dist 0.40 -> ~68%
-  // dist 0.46 -> ~60%
-  // dist 0.50 -> ~54%
-  const score = Math.round(100 - (distance / 0.6) * 55);
-  return Math.max(15, Math.min(99, score));
+  if (distance <= 0.12) return 99;
+  if (distance >= 0.45) return 50;
+  // Monotonic FaceNet calibration:
+  // dist 0.15 -> 98%
+  // dist 0.25 -> 90%
+  // dist 0.35 -> 81%
+  // dist 0.40 -> 75%
+  // dist 0.44 -> 70%
+  const ratio = (distance - 0.12) / (0.44 - 0.12);
+  const score = Math.round(99 - ratio * 29);
+  return Math.max(50, Math.min(99, score));
 }
