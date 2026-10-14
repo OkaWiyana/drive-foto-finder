@@ -18,6 +18,7 @@ interface DriveInputProps {
   totalFiles: number | null;
   errorMessage: string | null;
   detectedFolderId: string | null;
+  disabled?: boolean;
 }
 
 export function DriveInput({
@@ -28,6 +29,7 @@ export function DriveInput({
   totalFiles,
   errorMessage,
   detectedFolderId,
+  disabled = false,
 }: DriveInputProps) {
   const [localError, setLocalError] = useState<string | null>(null);
 
@@ -84,16 +86,16 @@ export function DriveInput({
                 if (localError) setLocalError(null);
               }}
               placeholder="https://drive.google.com/drive/folders/..."
-              disabled={isLoading}
-              className="w-full px-3.5 py-2.5 text-xs bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+              disabled={isLoading || disabled}
+              className="w-full px-3.5 py-2.5 text-xs bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all disabled:opacity-60 disabled:cursor-not-allowed"
             />
           </div>
 
           <button
             type="submit"
             onClick={handleSubmit}
-            disabled={isLoading}
-            className="px-4 py-2.5 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 text-xs font-medium rounded-xl hover:bg-zinc-800 dark:hover:bg-white active:bg-zinc-950 disabled:opacity-50 transition-colors flex items-center justify-center gap-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-zinc-500 min-w-35"
+            disabled={isLoading || disabled}
+            className="px-4 py-2.5 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 text-xs font-medium rounded-xl hover:bg-zinc-800 dark:hover:bg-white active:bg-zinc-950 disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none disabled:shadow-none transition-colors flex items-center justify-center gap-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-zinc-500 min-w-35"
           >
             {isLoading ? (
               <>

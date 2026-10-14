@@ -10,6 +10,7 @@ interface CameraCaptureProps {
   onClear: () => void;
   detectionStatus: "idle" | "detecting" | "success" | "error";
   errorMessage: string | null;
+  disabled?: boolean;
 }
 
 export function CameraCapture({
@@ -19,6 +20,7 @@ export function CameraCapture({
   onClear,
   detectionStatus,
   errorMessage,
+  disabled = false,
 }: CameraCaptureProps) {
   const [mode, setMode] = useState<"camera" | "upload">("upload");
   const [stream, setStream] = useState<MediaStream | null>(null);
@@ -155,11 +157,12 @@ export function CameraCapture({
         <div className="inline-flex p-1 bg-zinc-100 dark:bg-zinc-800 rounded-lg text-xs font-medium">
           <button
             type="button"
+            disabled={isProcessing || disabled}
             onClick={() => {
               setMode("upload");
               stopCamera();
             }}
-            className={`px-3 py-1.5 rounded-md transition-colors ${
+            className={`px-3 py-1.5 rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none ${
               mode === "upload"
                 ? "bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 shadow-sm"
                 : "text-zinc-600 dark:text-zinc-400 hover:text-zinc-900"
@@ -169,13 +172,14 @@ export function CameraCapture({
           </button>
           <button
             type="button"
+            disabled={isProcessing || disabled}
             onClick={() => {
               setMode("camera");
               if (!selectedPreviewUrl) {
                 startCamera();
               }
             }}
-            className={`px-3 py-1.5 rounded-md transition-colors ${
+            className={`px-3 py-1.5 rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none ${
               mode === "camera"
                 ? "bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 shadow-sm"
                 : "text-zinc-600 dark:text-zinc-400 hover:text-zinc-900"
@@ -193,13 +197,27 @@ export function CameraCapture({
               <img
                 src={selectedPreviewUrl}
                 alt="Wajah Target"
-                className="w-36 h-36 object-cover rounded-xl border-2 border-zinc-300 dark:border-zinc-600 shadow-sm"
+                className={`w-36 h-36 object-cover rounded-xl border-2 border-zinc-300 dark:border-zinc-600 shadow-sm transition-all ${
+                  isProcessing ? "opacity-60 blur-[1px]" : ""
+                }`}
               />
+
+              {/* Processing Spinner Overlay */}
+              {isProcessing && (
+                <div className="absolute inset-0 bg-zinc-950/65 rounded-xl flex flex-col items-center justify-center text-white backdrop-blur-[1px]">
+                  <RefreshCw className="w-6 h-6 animate-spin text-indigo-400 mb-1.5" />
+                  <span className="text-[11px] font-semibold tracking-tight">
+                    Menganalisis...
+                  </span>
+                </div>
+              )}
+
               <button
                 type="button"
                 onClick={handleClear}
+                disabled={isProcessing || disabled}
                 aria-label="Hapus foto wajah"
-                className="absolute -top-2 -right-2 p-1.5 bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 rounded-full hover:bg-zinc-700 dark:hover:bg-zinc-300 transition-colors shadow focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="absolute -top-2 -right-2 p-1.5 bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 rounded-full hover:bg-zinc-700 dark:hover:bg-zinc-300 transition-colors shadow disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none focus:outline-none focus:ring-2 focus:ring-indigo-500"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
@@ -230,7 +248,8 @@ export function CameraCapture({
             <button
               type="button"
               onClick={handleClear}
-              className="mt-3 inline-flex items-center gap-1.5 text-xs text-indigo-600 dark:text-indigo-400 hover:underline font-medium"
+              disabled={isProcessing || disabled}
+              className="mt-3 inline-flex items-center gap-1.5 text-xs text-indigo-600 dark:text-indigo-400 hover:underline font-medium disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none disabled:no-underline"
             >
               <RotateCcw className="w-3 h-3" />
               Ambil Ulang / Ganti Foto
@@ -245,7 +264,8 @@ export function CameraCapture({
                 <button
                   type="button"
                   onClick={startCamera}
-                  className="px-3 py-1.5 text-xs font-medium bg-rose-600 text-white rounded-lg hover:bg-rose-700 transition-colors"
+                  disabled={disabled}
+                  className="px-3 py-1.5 text-xs font-medium bg-rose-600 text-white rounded-lg hover:bg-rose-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none"
                 >
                   Coba Akses Lagi
                 </button>
@@ -269,8 +289,8 @@ export function CameraCapture({
                 <button
                   type="button"
                   onClick={handleCapturePhoto}
-                  disabled={!isCameraActive || isProcessing}
-                  className="mt-4 px-5 py-2.5 bg-indigo-600 text-white rounded-xl font-medium text-xs hover:bg-indigo-700 active:bg-indigo-800 disabled:opacity-50 transition-colors flex items-center gap-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+                  disabled={!isCameraActive || isProcessing || disabled}
+                  className="mt-4 px-5 py-2.5 bg-indigo-600 text-white rounded-xl font-medium text-xs hover:bg-indigo-700 active:bg-indigo-800 disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none disabled:shadow-none transition-colors flex items-center gap-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
                 >
                   <Camera className="w-4 h-4" />
                   Ambil Foto Sekarang
@@ -284,13 +304,18 @@ export function CameraCapture({
               ref={fileInputRef}
               type="file"
               accept="image/jpeg,image/png,image/webp"
+              disabled={isProcessing || disabled}
               onChange={handleFileUpload}
               className="hidden"
               id="face-upload-input"
             />
             <label
-              htmlFor="face-upload-input"
-              className="flex flex-col items-center justify-center p-8 border-2 border-dashed border-zinc-200 dark:border-zinc-700 hover:border-indigo-500 dark:hover:border-indigo-400 rounded-xl cursor-pointer bg-zinc-50/50 dark:bg-zinc-800/20 transition-colors"
+              htmlFor={isProcessing || disabled ? undefined : "face-upload-input"}
+              className={`flex flex-col items-center justify-center p-8 border-2 border-dashed rounded-xl transition-colors ${
+                isProcessing || disabled
+                  ? "opacity-50 cursor-not-allowed border-zinc-200 dark:border-zinc-800 bg-zinc-100/40 dark:bg-zinc-800/10 pointer-events-none"
+                  : "border-zinc-200 dark:border-zinc-700 hover:border-indigo-500 dark:hover:border-indigo-400 cursor-pointer bg-zinc-50/50 dark:bg-zinc-800/20"
+              }`}
             >
               <div className="p-3 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 rounded-full mb-2">
                 <Upload className="w-5 h-5" />
