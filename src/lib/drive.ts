@@ -59,15 +59,24 @@ export function getOptimizedThumbnail(
 }
 
 export function distanceToConfidence(distance: number): number {
-  if (distance <= 0.12) return 99;
-  if (distance >= 0.45) return 50;
-  // Monotonic FaceNet calibration:
-  // dist 0.15 -> 98%
-  // dist 0.25 -> 90%
-  // dist 0.35 -> 81%
-  // dist 0.40 -> 75%
-  // dist 0.44 -> 70%
-  const ratio = (distance - 0.12) / (0.44 - 0.12);
-  const score = Math.round(99 - ratio * 29);
-  return Math.max(50, Math.min(99, score));
+  if (distance <= 0.08) return 99;
+
+  // Match zone (distance <= 0.44): scores smoothly from 99% down to 70%
+  if (distance <= 0.44) {
+    const ratio = (distance - 0.08) / (0.44 - 0.08);
+    const score = Math.round(99 - ratio * 29);
+    return Math.max(70, Math.min(99, score));
+  }
+
+  // Non-match zone (distance > 0.44): realistic, continuous drop from 69% down to 5%
+  // Strangers naturally range between 10% - 55% based on actual geometric embedding distance
+  if (distance <= 0.90) {
+    const ratio = (distance - 0.44) / (0.90 - 0.44);
+    const score = Math.round(69 - ratio * 64);
+    return Math.max(5, Math.min(69, score));
+  }
+
+  // Extreme distance (> 0.90): completely unrelated faces
+  const extremeScore = Math.round(5 - (distance - 0.90) * 15);
+  return Math.max(1, Math.min(5, extremeScore));
 }
