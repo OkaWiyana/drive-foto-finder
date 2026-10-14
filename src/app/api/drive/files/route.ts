@@ -129,20 +129,26 @@ export async function GET(request: NextRequest) {
               visitedFolders.add(item.id);
               queue.push(item.id);
             }
-          } else if (
-            item.mimeType &&
-            item.mimeType.startsWith("image/") &&
-            !seenFileIds.has(item.id)
-          ) {
-            seenFileIds.add(item.id);
-            allFiles.push({
-              id: item.id,
-              name: item.name,
-              thumbnailLink: getOptimizedThumbnail(item.thumbnailLink, 1200),
-              webContentLink: item.webContentLink,
-              webViewLink: item.webViewLink,
-              size: item.size,
-            });
+          } else {
+            const isImage =
+              (item.mimeType && item.mimeType.startsWith("image/")) ||
+              /\.(jpe?g|png|webp|heic|avif)$/i.test(item.name || "");
+
+            if (isImage && !seenFileIds.has(item.id)) {
+              seenFileIds.add(item.id);
+              const fallbackThumb = `https://lh3.googleusercontent.com/d/${item.id}=s1600`;
+              const thumbnailLink =
+                getOptimizedThumbnail(item.thumbnailLink, 1600) || fallbackThumb;
+
+              allFiles.push({
+                id: item.id,
+                name: item.name,
+                thumbnailLink,
+                webContentLink: item.webContentLink,
+                webViewLink: item.webViewLink,
+                size: item.size,
+              });
+            }
           }
         }
 

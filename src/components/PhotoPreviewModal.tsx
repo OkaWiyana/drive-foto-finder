@@ -38,13 +38,13 @@ export function PhotoPreviewModal({ photo, onClose }: PhotoPreviewModalProps) {
   const { file, distance, detectedFaces = [] } = photo;
   const confidenceScore = distanceToConfidence(distance);
 
-  // Use higher resolution for preview modal (=s1200)
+  // Use higher resolution for preview modal (=s1600)
   const highResThumbnail = file.thumbnailLink
-    ? file.thumbnailLink.replace(/=s\d+/, "=s1200")
+    ? file.thumbnailLink.replace(/=s\d+/, "=s1600")
     : undefined;
 
   const previewSrc = highResThumbnail
-    ? `/api/drive/image?url=${encodeURIComponent(highResThumbnail)}`
+    ? `/api/drive/image?url=${encodeURIComponent(highResThumbnail)}&fileId=${file.id}`
     : `/api/drive/image?fileId=${file.id}`;
 
   const downloadUrl =

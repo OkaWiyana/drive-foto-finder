@@ -1,7 +1,7 @@
 import { get, set, clear } from "idb-keyval";
 import { FaceDetail } from "@/hooks/useFaceApi";
 
-const CACHE_PREFIX = "drive_face_v5_";
+const CACHE_PREFIX = "drive_face_v6_";
 
 interface RawCachedItem {
   descriptor: number[];

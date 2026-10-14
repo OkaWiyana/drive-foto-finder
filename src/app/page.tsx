@@ -59,7 +59,7 @@ export default function HomePage() {
   const [scannedCount, setScannedCount] = useState(0);
   const [cachedCount, setCachedCount] = useState(0);
   const [matchedPhotos, setMatchedPhotos] = useState<MatchedPhoto[]>([]);
-  const [similarityThreshold, setSimilarityThreshold] = useState<number>(0.43);
+  const [similarityThreshold, setSimilarityThreshold] = useState<number>(0.42);
   const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
   const [scanValidationWarning, setScanValidationWarning] = useState<
     string | null
@@ -69,8 +69,33 @@ export default function HomePage() {
   // Modal Preview State
   const [previewPhoto, setPreviewPhoto] = useState<MatchedPhoto | null>(null);
 
-  // Abort controller ref
+  // Abort controller & all scanned results ref for dynamic re-filtering
   const abortControllerRef = useRef<AbortController | null>(null);
+  const allScanResultsRef = useRef<
+    Array<{
+      file: DriveFile;
+      distance: number;
+      detectedFaces: DetectedFaceBox[];
+    }>
+  >([]);
+
+  // Dynamically re-filter matched photos when similarity threshold is adjusted
+  React.useEffect(() => {
+    if (allScanResultsRef.current.length > 0 && !isScanning) {
+      const updated = allScanResultsRef.current
+        .map((item) => ({
+          ...item,
+          detectedFaces: item.detectedFaces.map((f) => ({
+            ...f,
+            isMatch: f.distance <= similarityThreshold,
+          })),
+        }))
+        .filter((item) => item.distance <= similarityThreshold)
+        .sort((a, b) => a.distance - b.distance);
+
+      setMatchedPhotos(updated);
+    }
+  }, [similarityThreshold, isScanning]);
 
   // 1. Fetch files from Drive
   const handleFetchFiles = async () => {
@@ -200,6 +225,7 @@ export default function HomePage() {
     setScannedCount(0);
     setCachedCount(0);
     setMatchedPhotos([]);
+    allScanResultsRef.current = [];
 
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
@@ -218,7 +244,7 @@ export default function HomePage() {
         if (faces === null) {
           // Step B: Fetch through proxy and detect
           const proxyUrl = file.thumbnailLink
-            ? `/api/drive/image?url=${encodeURIComponent(file.thumbnailLink)}`
+            ? `/api/drive/image?url=${encodeURIComponent(file.thumbnailLink)}&fileId=${file.id}`
             : `/api/drive/image?fileId=${file.id}`;
 
           const img = await new Promise<HTMLImageElement>((resolve, reject) => {
@@ -261,6 +287,13 @@ export default function HomePage() {
             bestDistance = df.distance;
           }
         }
+
+        // Record all scanned results for real-time dynamic slider adjustment
+        allScanResultsRef.current.push({
+          file,
+          distance: bestDistance,
+          detectedFaces,
+        });
 
         if (bestDistance <= similarityThreshold) {
           setMatchedPhotos((prev) => {
@@ -553,26 +586,26 @@ export default function HomePage() {
                 <button
                   type="button"
                   disabled={isScanning}
-                  onClick={() => setSimilarityThreshold(0.39)}
+                  onClick={() => setSimilarityThreshold(0.38)}
                   className={`px-2.5 py-1 text-[11px] rounded-lg border font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none ${
-                    similarityThreshold === 0.39
+                    similarityThreshold === 0.38
                       ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
                       : "bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200"
                   }`}
                 >
-                  Sangat Ketat (0.39) - Tanpa Toleransi
+                  Sangat Ketat (0.38) - Hanya Wajah Jelas
                 </button>
                 <button
                   type="button"
                   disabled={isScanning}
-                  onClick={() => setSimilarityThreshold(0.43)}
+                  onClick={() => setSimilarityThreshold(0.42)}
                   className={`px-2.5 py-1 text-[11px] rounded-lg border font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none ${
-                    similarityThreshold === 0.43
+                    similarityThreshold === 0.42
                       ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
                       : "bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200"
                   }`}
                 >
-                  Standar Akurat (0.43) - Rekomendasi
+                  Standar Akurat (0.42) - Rekomendasi
                 </button>
                 <button
                   type="button"
@@ -584,7 +617,7 @@ export default function HomePage() {
                       : "bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200"
                   }`}
                 >
-                  Fleksibel (0.46) - Foto Miring/Gelap
+                  Fleksibel (0.46) - Termasuk Foto Jauh / Miring
                 </button>
               </div>
 

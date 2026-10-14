@@ -166,13 +166,13 @@ export function useFaceApi() {
         .withFaceLandmarks()
         .withFaceDescriptors();
 
-      // Pass 2: TinyFaceDetector with large inputSize (to detect distant/group and angled faces)
+      // Pass 2: TinyFaceDetector with 1024 inputSize (to detect distant/group and angled faces)
       const tinyResults = await faceapi
         .detectAllFaces(
           input,
           new faceapi.TinyFaceDetectorOptions({
-            inputSize: 832,
-            scoreThreshold: 0.38,
+            inputSize: 1024,
+            scoreThreshold: 0.30,
           }),
         )
         .withFaceLandmarks()
@@ -211,8 +211,8 @@ export function useFaceApi() {
       for (const face of merged) {
         const box = face.detection.box;
 
-        // Minimum dimensions: Face must be at least 18x18 px
-        if (box.width < 18 || box.height < 18) continue;
+        // Minimum dimensions: Face must be at least 14x14 px (catches distant group photo faces)
+        if (box.width < 14 || box.height < 14) continue;
 
         // Aspect ratio: Human faces have width/height ratio between 0.45 and 1.65 (covers tilted & side angles)
         const aspect = box.width / box.height;
@@ -226,8 +226,8 @@ export function useFaceApi() {
           const landmarkSpanW = Math.max(...xs) - Math.min(...xs);
           const landmarkSpanH = Math.max(...ys) - Math.min(...ys);
 
-          // Landmarks must span at least 25% of the box dimensions (works on side angles and tilted heads)
-          if (landmarkSpanW < box.width * 0.25 || landmarkSpanH < box.height * 0.25) {
+          // Landmarks must span at least 20% of the box dimensions (works on side angles and tilted heads)
+          if (landmarkSpanW < box.width * 0.20 || landmarkSpanH < box.height * 0.20) {
             continue;
           }
         }

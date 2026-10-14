@@ -34,7 +34,7 @@ export function PhotoCard({ photo, onPreview }: PhotoCardProps) {
   const confidenceScore = distanceToConfidence(distance);
 
   const proxyImageUrl = file.thumbnailLink
-    ? `/api/drive/image?url=${encodeURIComponent(file.thumbnailLink)}`
+    ? `/api/drive/image?url=${encodeURIComponent(file.thumbnailLink)}&fileId=${file.id}`
     : `/api/drive/image?fileId=${file.id}`;
 
   const downloadUrl =
