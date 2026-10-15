@@ -24,7 +24,11 @@ import { useFaceApi } from "@/hooks/useFaceApi";
 import { CameraCapture, TargetFaceItem } from "@/components/CameraCapture";
 import { DriveInput } from "@/components/DriveInput";
 import { ScanningProgress } from "@/components/ScanningProgress";
-import { PhotoCard, MatchedPhoto, DetectedFaceBox } from "@/components/PhotoCard";
+import {
+  PhotoCard,
+  MatchedPhoto,
+  DetectedFaceBox,
+} from "@/components/PhotoCard";
 import { PhotoPreviewModal } from "@/components/PhotoPreviewModal";
 
 export default function HomePage() {
@@ -153,6 +157,9 @@ export default function HomePage() {
     setDetectionError(null);
     setScanValidationWarning(null);
 
+    // Yield to let React immediately render the loading UI & spinner before heavy WebGL/Wasm blocks
+    await new Promise((resolve) => setTimeout(resolve, 80));
+
     try {
       const descriptor = await extractSingleDescriptor(imageElement);
       if (!descriptor) {
@@ -227,10 +234,14 @@ export default function HomePage() {
     setMatchedPhotos([]);
     allScanResultsRef.current = [];
 
+    // Yield to let React immediately render the scanning UI and loader
+    await new Promise((resolve) => setTimeout(resolve, 80));
+
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
 
-    const CONCURRENCY = 3;
+    // Concurrency set to 2 to ensure smooth WebGL rendering without GPU context thrashing
+    const CONCURRENCY = 2;
     let nextIndex = 0;
     const total = driveFiles.length;
 
@@ -536,7 +547,9 @@ export default function HomePage() {
             <button
               type="button"
               onClick={handleStartScanClick}
-              disabled={isScanning || detectionStatus === "detecting" || !isReady}
+              disabled={
+                isScanning || detectionStatus === "detecting" || !isReady
+              }
               className={`w-full sm:w-auto px-6 py-3 text-white text-xs sm:text-sm font-semibold rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 ${
                 isScanning || detectionStatus === "detecting"
                   ? "bg-zinc-700 opacity-60 cursor-not-allowed pointer-events-none shadow-none"
@@ -634,7 +647,9 @@ export default function HomePage() {
                 className="w-full h-1.5 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-indigo-600 disabled:opacity-40 disabled:cursor-not-allowed"
               />
               <p className="text-[11px] text-zinc-500 mt-1.5">
-                Nilai threshold lebih kecil (misal <strong>0.39 - 0.43</strong>) menjamin hanya wajah Anda yang lolos dan menyaring orang lain atau background.
+                Nilai threshold lebih kecil (misal <strong>0.39 - 0.43</strong>)
+                menjamin hanya wajah Anda yang lolos dan menyaring orang lain
+                atau background.
               </p>
             </div>
           )}

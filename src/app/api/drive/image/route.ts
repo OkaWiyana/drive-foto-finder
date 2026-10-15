@@ -56,8 +56,8 @@ export async function GET(request: NextRequest) {
     }
 
     if (effectiveFileId) {
-      const cdn1 = `https://lh3.googleusercontent.com/d/${effectiveFileId}=s1600`;
-      const cdn2 = `https://drive.google.com/thumbnail?id=${effectiveFileId}&sz=w1600`;
+      const cdn1 = `https://lh3.googleusercontent.com/d/${effectiveFileId}=s1024`;
+      const cdn2 = `https://drive.google.com/thumbnail?id=${effectiveFileId}&sz=w1024`;
       if (!candidateUrls.includes(cdn1)) candidateUrls.push(cdn1);
       if (!candidateUrls.includes(cdn2)) candidateUrls.push(cdn2);
     }

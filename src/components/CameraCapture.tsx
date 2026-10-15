@@ -48,6 +48,7 @@ export function CameraCapture({
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [isCameraActive, setIsCameraActive] = useState(false);
+  const [processingPreview, setProcessingPreview] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -62,22 +63,26 @@ export function CameraCapture({
         ? "Wajah Samping / 3/4"
         : "Wajah Pose Lain";
 
+  const streamRef = useRef<MediaStream | null>(null);
+  const isWaitingForDetectionRef = useRef(false);
+
   const stopCamera = useCallback(() => {
-    if (stream) {
-      stream.getTracks().forEach((track) => track.stop());
-      setStream(null);
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
     }
+    setStream(null);
     setIsCameraActive(false);
-  }, [stream]);
+  }, []);
 
   const startCamera = useCallback(async () => {
     if (isStartingRef.current) return;
     isStartingRef.current = true;
     setCameraError(null);
 
-    if (stream) {
-      stream.getTracks().forEach((t) => t.stop());
-      setStream(null);
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
     }
 
     try {
@@ -90,6 +95,7 @@ export function CameraCapture({
         audio: false,
       });
 
+      streamRef.current = mediaStream;
       setStream(mediaStream);
       setIsCameraActive(true);
       if (videoRef.current) {
@@ -106,7 +112,24 @@ export function CameraCapture({
     } finally {
       isStartingRef.current = false;
     }
-  }, [stream]);
+  }, []);
+
+  // Watch detection status to clean up processing preview & close capture form when done
+  useEffect(() => {
+    if (!isWaitingForDetectionRef.current) return;
+
+    if (detectionStatus === "success") {
+      isWaitingForDetectionRef.current = false;
+      setProcessingPreview(null);
+      setIsAddingMore(false);
+    } else if (detectionStatus === "error") {
+      isWaitingForDetectionRef.current = false;
+      setProcessingPreview(null);
+      if (mode === "camera" && isCaptureActive) {
+        startCamera();
+      }
+    }
+  }, [detectionStatus, mode, isCaptureActive, startCamera]);
 
   // Keep video element connected and playing whenever stream or DOM changes
   useEffect(() => {
@@ -120,7 +143,7 @@ export function CameraCapture({
 
   // Automatically start or stop camera based on active mode & state
   useEffect(() => {
-    if (mode === "camera" && isCaptureActive) {
+    if (mode === "camera" && isCaptureActive && !processingPreview) {
       startCamera();
     } else {
       stopCamera();
@@ -128,10 +151,17 @@ export function CameraCapture({
     return () => {
       stopCamera();
     };
-  }, [mode, isCaptureActive]);
+  }, [mode, isCaptureActive, processingPreview, startCamera, stopCamera]);
 
   const handleCapturePhoto = () => {
-    if (!videoRef.current) return;
+    if (
+      !videoRef.current ||
+      isProcessing ||
+      detectionStatus === "detecting" ||
+      processingPreview
+    )
+      return;
+
     const video = videoRef.current;
     const canvas = document.createElement("canvas");
     canvas.width = video.videoWidth || 640;
@@ -145,23 +175,32 @@ export function CameraCapture({
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
     const dataUrl = canvas.toDataURL("image/jpeg", 0.95);
+    isWaitingForDetectionRef.current = true;
+    setProcessingPreview(dataUrl);
     stopCamera();
     onAddFace(canvas, dataUrl, currentLabel);
-    setIsAddingMore(false);
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (
+      !file ||
+      isProcessing ||
+      detectionStatus === "detecting" ||
+      processingPreview
+    )
+      return;
 
     const reader = new FileReader();
     reader.onload = (event) => {
       const result = event.target?.result as string;
       if (!result) return;
+
+      isWaitingForDetectionRef.current = true;
+      setProcessingPreview(result);
       const img = new Image();
       img.onload = () => {
         onAddFace(img, result, currentLabel);
-        setIsAddingMore(false);
       };
       img.src = result;
     };
@@ -193,8 +232,8 @@ export function CameraCapture({
           <button
             type="button"
             onClick={() => setIsAddingMore(false)}
-            disabled={isProcessing}
-            className="px-2.5 py-1 text-xs text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 rounded-lg border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors flex items-center gap-1 disabled:opacity-40"
+            disabled={isProcessing || detectionStatus === "detecting" || Boolean(processingPreview)}
+            className="px-2.5 py-1 text-xs text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 rounded-lg border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <ArrowLeft className="w-3 h-3" />
             Kembali
@@ -203,7 +242,7 @@ export function CameraCapture({
           <div className="inline-flex p-1 bg-zinc-100 dark:bg-zinc-800 rounded-lg text-xs font-medium">
             <button
               type="button"
-              disabled={isProcessing || disabled}
+              disabled={isProcessing || detectionStatus === "detecting" || Boolean(processingPreview) || disabled}
               onClick={() => {
                 setMode("upload");
                 stopCamera();
@@ -218,7 +257,7 @@ export function CameraCapture({
             </button>
             <button
               type="button"
-              disabled={isProcessing || disabled}
+              disabled={isProcessing || detectionStatus === "detecting" || Boolean(processingPreview) || disabled}
               onClick={() => {
                 setMode("camera");
                 startCamera();
@@ -254,7 +293,7 @@ export function CameraCapture({
                     <button
                       type="button"
                       onClick={() => onRemoveFace(face.id)}
-                      disabled={disabled || isProcessing}
+                      disabled={disabled || isProcessing || detectionStatus === "detecting"}
                       aria-label="Hapus foto ini"
                       className="absolute top-1 right-1 p-1 bg-zinc-900/80 hover:bg-rose-600 text-white rounded-full transition-colors shadow disabled:opacity-40 disabled:pointer-events-none"
                     >
@@ -271,8 +310,12 @@ export function CameraCapture({
               {targetFaces.length < 3 && (
                 <button
                   type="button"
-                  onClick={() => setIsAddingMore(true)}
-                  disabled={disabled || isProcessing}
+                  onClick={() => {
+                    isWaitingForDetectionRef.current = false;
+                    setProcessingPreview(null);
+                    setIsAddingMore(true);
+                  }}
+                  disabled={disabled || isProcessing || detectionStatus === "detecting"}
                   className="p-3 border-2 border-dashed border-zinc-200 dark:border-zinc-700 hover:border-indigo-500 dark:hover:border-indigo-400 rounded-xl flex flex-col items-center justify-center text-center transition-colors min-h-28 group hover:bg-indigo-50/30 dark:hover:bg-indigo-950/20 disabled:opacity-40 disabled:pointer-events-none cursor-pointer"
                 >
                   <div className="p-2 bg-zinc-100 dark:bg-zinc-800 group-hover:bg-indigo-600 group-hover:text-white text-zinc-500 rounded-full transition-colors mb-1">
@@ -306,7 +349,39 @@ export function CameraCapture({
               </div>
             )}
 
-            {mode === "camera" ? (
+            {/* If currently processing an image (selfie captured or file uploaded) */}
+            {processingPreview || (detectionStatus === "detecting" && isCaptureActive) ? (
+              <div className="flex flex-col items-center">
+                <div className="relative w-full max-w-sm aspect-square bg-zinc-950 rounded-xl overflow-hidden shadow-md flex flex-col items-center justify-center border border-zinc-800">
+                  {processingPreview && (
+                    <img
+                      src={processingPreview}
+                      alt="Pratinjau Wajah"
+                      className="absolute inset-0 w-full h-full object-cover opacity-35 blur-[2px]"
+                    />
+                  )}
+                  <div className="relative z-10 flex flex-col items-center justify-center p-6 text-center text-white">
+                    <div className="p-3.5 bg-indigo-600 text-white rounded-full mb-3 shadow-lg animate-pulse ring-4 ring-indigo-400/30">
+                      <RefreshCw className="w-6 h-6 animate-spin text-white" />
+                    </div>
+                    <h3 className="text-sm font-semibold mb-1.5 text-white">
+                      Menganalisis Foto Wajah...
+                    </h3>
+                    <p className="text-xs text-zinc-300 max-w-xs leading-relaxed">
+                      Model AI sedang mendeteksi wajah dan mengekstrak vektor 128 dimensi. Mohon tunggu beberapa detik...
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  disabled
+                  className="mt-4 px-5 py-2.5 bg-indigo-600/70 text-white rounded-xl font-medium text-xs cursor-not-allowed flex items-center gap-2 shadow-none select-none pointer-events-none"
+                >
+                  <RefreshCw className="w-4 h-4 animate-spin text-white" />
+                  Sedang Menganalisis Wajah...
+                </button>
+              </div>
+            ) : mode === "camera" ? (
               <div className="flex flex-col items-center">
                 {cameraError ? (
                   <div className="w-full p-4 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900 rounded-xl text-center">
@@ -341,7 +416,7 @@ export function CameraCapture({
                     <button
                       type="button"
                       onClick={handleCapturePhoto}
-                      disabled={!isCameraActive || isProcessing || disabled}
+                      disabled={!isCameraActive || isProcessing || detectionStatus === "detecting" || disabled}
                       className="mt-4 px-5 py-2.5 bg-indigo-600 text-white rounded-xl font-medium text-xs hover:bg-indigo-700 active:bg-indigo-800 disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none disabled:shadow-none transition-colors flex items-center gap-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
                     >
                       <Camera className="w-4 h-4" />
@@ -356,15 +431,15 @@ export function CameraCapture({
                   ref={fileInputRef}
                   type="file"
                   accept="image/jpeg,image/png,image/webp"
-                  disabled={isProcessing || disabled}
+                  disabled={isProcessing || detectionStatus === "detecting" || disabled}
                   onChange={handleFileUpload}
                   className="hidden"
                   id="face-upload-input"
                 />
                 <label
-                  htmlFor={isProcessing || disabled ? undefined : "face-upload-input"}
+                  htmlFor={isProcessing || detectionStatus === "detecting" || disabled ? undefined : "face-upload-input"}
                   className={`flex flex-col items-center justify-center p-8 border-2 border-dashed rounded-xl transition-colors ${
-                    isProcessing || disabled
+                    isProcessing || detectionStatus === "detecting" || disabled
                       ? "opacity-50 cursor-not-allowed border-zinc-200 dark:border-zinc-800 bg-zinc-100/40 dark:bg-zinc-800/10 pointer-events-none"
                       : "border-zinc-200 dark:border-zinc-700 hover:border-indigo-500 dark:hover:border-indigo-400 cursor-pointer bg-zinc-50/50 dark:bg-zinc-800/20"
                   }`}

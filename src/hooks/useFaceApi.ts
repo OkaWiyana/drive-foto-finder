@@ -150,30 +150,28 @@ export function useFaceApi() {
       input: HTMLImageElement | HTMLCanvasElement,
     ): Promise<FaceDetail[]> => {
       const faceapi = await getFaceApi();
-      if (!faceapi.nets.ssdMobilenetv1.isLoaded || !faceapi.nets.tinyFaceDetector.isLoaded) {
+      if (
+        !faceapi.nets.ssdMobilenetv1.isLoaded ||
+        !faceapi.nets.tinyFaceDetector.isLoaded
+      ) {
         await loadModels();
       }
 
-      const imgWidth = "naturalWidth" in input ? input.naturalWidth || input.width : input.width;
-      const imgHeight = "naturalHeight" in input ? input.naturalHeight || input.height : input.height;
+      const imgWidth =
+        "naturalWidth" in input
+          ? input.naturalWidth || input.width
+          : input.width;
+      const imgHeight =
+        "naturalHeight" in input
+          ? input.naturalHeight || input.height
+          : input.height;
 
-      // Pass 1: SSD MobileNet (minConfidence 0.28 to detect 3/4 profiles and clear faces)
+      // Pass 1: SSD MobileNet with high sensitivity (minConfidence 0.22)
+      // High accuracy for front faces, tilted profiles, and small faces in 1 pass
       const ssdResults = await faceapi
         .detectAllFaces(
           input,
-          new faceapi.SsdMobilenetv1Options({ minConfidence: 0.28 }),
-        )
-        .withFaceLandmarks()
-        .withFaceDescriptors();
-
-      // Pass 2: TinyFaceDetector with 1024 inputSize (to detect distant/group and angled faces)
-      const tinyResults = await faceapi
-        .detectAllFaces(
-          input,
-          new faceapi.TinyFaceDetectorOptions({
-            inputSize: 1024,
-            scoreThreshold: 0.30,
-          }),
+          new faceapi.SsdMobilenetv1Options({ minConfidence: 0.22 }),
         )
         .withFaceLandmarks()
         .withFaceDescriptors();
@@ -194,14 +192,29 @@ export function useFaceApi() {
         return unionArea <= 0 ? 0 : interArea / unionArea;
       };
 
-      // Merge: Keep all SSD detections, and add Tiny detections that don't overlap with SSD
+      // Pass 2: Smart Crowd/Angled Booster
+      // If SSD detected fewer than 6 faces, run lightweight TinyFaceDetector (inputSize 512)
+      // to catch distant, running, or heavily angled faces without overloading GPU
       const merged = [...ssdResults];
-      for (const tiny of tinyResults) {
-        const isDuplicate = ssdResults.some(
-          (ssd) => calcIoU(tiny.detection.box, ssd.detection.box) > 0.25,
-        );
-        if (!isDuplicate) {
-          merged.push(tiny);
+      if (ssdResults.length < 6) {
+        const tinyResults = await faceapi
+          .detectAllFaces(
+            input,
+            new faceapi.TinyFaceDetectorOptions({
+              inputSize: 512,
+              scoreThreshold: 0.26,
+            }),
+          )
+          .withFaceLandmarks()
+          .withFaceDescriptors();
+
+        for (const tiny of tinyResults) {
+          const isDuplicate = ssdResults.some(
+            (ssd) => calcIoU(tiny.detection.box, ssd.detection.box) > 0.25,
+          );
+          if (!isDuplicate) {
+            merged.push(tiny);
+          }
         }
       }
 
@@ -227,7 +240,10 @@ export function useFaceApi() {
           const landmarkSpanH = Math.max(...ys) - Math.min(...ys);
 
           // Landmarks must span at least 20% of the box dimensions (works on side angles and tilted heads)
-          if (landmarkSpanW < box.width * 0.20 || landmarkSpanH < box.height * 0.20) {
+          if (
+            landmarkSpanW < box.width * 0.2 ||
+            landmarkSpanH < box.height * 0.2
+          ) {
             continue;
           }
         }
