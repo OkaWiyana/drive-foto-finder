@@ -136,9 +136,9 @@ export async function GET(request: NextRequest) {
 
             if (isImage && !seenFileIds.has(item.id)) {
               seenFileIds.add(item.id);
-              const fallbackThumb = `https://lh3.googleusercontent.com/d/${item.id}=s1600`;
+              const fallbackThumb = `https://lh3.googleusercontent.com/d/${item.id}=s1024`;
               const thumbnailLink =
-                getOptimizedThumbnail(item.thumbnailLink, 1600) || fallbackThumb;
+                getOptimizedThumbnail(item.thumbnailLink, 1024) || fallbackThumb;
 
               allFiles.push({
                 id: item.id,

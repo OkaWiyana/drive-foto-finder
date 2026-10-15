@@ -54,4 +54,3 @@ export async function clearAllDescriptorCache(): Promise<void> {
     console.warn("Gagal membersihkan cache IndexedDB:", err);
   }
 }
-

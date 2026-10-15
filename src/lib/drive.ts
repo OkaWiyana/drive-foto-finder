@@ -47,10 +47,10 @@ export function extractFolderId(input: string): string | null {
 
 export function getOptimizedThumbnail(
   thumbnailUrl?: string,
-  size = 1600,
+  size = 1024,
 ): string | undefined {
   if (!thumbnailUrl) return undefined;
-  // Replace =s220 or =s... with requested high-res size (=s1600) for sharp face recognition
+  // Replace =s220 or =s... with requested high-res size (=s1024) for sharp face recognition
   if (/=s\d+/.test(thumbnailUrl)) {
     return thumbnailUrl.replace(/=s\d+/, `=s${size}`);
   }
