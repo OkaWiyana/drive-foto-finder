@@ -33,6 +33,10 @@ export const metadata: Metadata = {
     "face finder google drive",
     "ai pencari foto",
   ],
+  icons: {
+    icon: "/logo-drive-face-finder.jpg",
+    apple: "/logo-drive-face-finder.jpg",
+  },
   authors: [{ name: "Oka Wiyana" }],
   openGraph: {
     title: "Drive Face Finder | Cari Foto Wajah di Google Drive Instan",

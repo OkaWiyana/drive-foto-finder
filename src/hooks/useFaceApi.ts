@@ -64,6 +64,29 @@ export function useFaceApi() {
     modelsLoadedPromise = (async () => {
       const faceapi = await getFaceApi();
 
+      if (faceapi.tf) {
+        const tf = faceapi.tf as unknown as {
+          setWasmPaths?: (path: string) => void;
+          setBackend?: (backend: string) => Promise<boolean>;
+          ready?: () => Promise<void>;
+        };
+
+        if (typeof tf.setWasmPaths === "function") {
+          tf.setWasmPaths("/");
+        }
+
+        try {
+          if (typeof tf.setBackend === "function") {
+            await tf.setBackend("webgl");
+          }
+          if (typeof tf.ready === "function") {
+            await tf.ready();
+          }
+        } catch {
+          // Fallback to default/CPU if WebGL is unavailable
+        }
+      }
+
       const MODEL_URL = "/models";
       await Promise.all([
         faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL),

@@ -12,6 +12,22 @@ const nextConfig: NextConfig = {
       },
     },
   },
+  async rewrites() {
+    return [
+      {
+        source: "/_next/static/chunks/tfjs-backend-wasm-simd.wasm",
+        destination: "/tfjs-backend-wasm-simd.wasm",
+      },
+      {
+        source: "/_next/static/chunks/tfjs-backend-wasm.wasm",
+        destination: "/tfjs-backend-wasm.wasm",
+      },
+      {
+        source: "/_next/static/chunks/tfjs-backend-wasm-threaded-simd.wasm",
+        destination: "/tfjs-backend-wasm-threaded-simd.wasm",
+      },
+    ];
+  },
 };
 
 export default nextConfig;
