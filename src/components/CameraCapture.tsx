@@ -51,13 +51,10 @@ export function CameraCapture({
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [isCameraActive, setIsCameraActive] = useState(false);
-<<<<<<< HEAD
   const [processingPreview, setProcessingPreview] = useState<string | null>(null);
-=======
   const [isCameraStarting, setIsCameraStarting] = useState(false);
   const [capturedFrame, setCapturedFrame] = useState<string | null>(null);
   const [isShutterFlashing, setIsShutterFlashing] = useState(false);
->>>>>>> ae0635a (maintenance view)
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -96,12 +93,8 @@ export function CameraCapture({
     }
     setStream(null);
     setIsCameraActive(false);
-<<<<<<< HEAD
-  }, []);
-=======
     setIsCameraStarting(false);
-  }, [stream]);
->>>>>>> ae0635a (maintenance view)
+  }, []);
 
   const startCamera = useCallback(async () => {
     if (isStartingRef.current) return;
@@ -109,18 +102,12 @@ export function CameraCapture({
     setIsCameraStarting(true);
     setCameraError(null);
 
-<<<<<<< HEAD
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((t) => t.stop());
-      streamRef.current = null;
-=======
     // Warm up AI models in background during camera hardware initialization
     onWarmupModel?.();
 
-    if (stream) {
-      stream.getTracks().forEach((t) => t.stop());
-      setStream(null);
->>>>>>> ae0635a (maintenance view)
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
     }
 
     try {
@@ -196,18 +183,12 @@ export function CameraCapture({
     if (
       !videoRef.current ||
       isProcessing ||
-<<<<<<< HEAD
       detectionStatus === "detecting" ||
-      processingPreview
-    )
-      return;
-
-=======
+      processingPreview ||
       !isCameraActive ||
       isCameraStarting
     )
       return;
->>>>>>> ae0635a (maintenance view)
     const video = videoRef.current;
     if (video.videoWidth === 0 || video.videoHeight === 0) return;
 
@@ -230,29 +211,14 @@ export function CameraCapture({
     ctx.scale(-1, 1);
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-<<<<<<< HEAD
-    const dataUrl = canvas.toDataURL("image/jpeg", 0.95);
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
+    setIsShutterFlashing(true);
+    setTimeout(() => setIsShutterFlashing(false), 120);
+
     isWaitingForDetectionRef.current = true;
     setProcessingPreview(dataUrl);
     stopCamera();
     onAddFace(canvas, dataUrl, currentLabel);
-=======
-    const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
-
-    // Trigger instant tactile shutter flash & freeze frame
-    setIsShutterFlashing(true);
-    setCapturedFrame(dataUrl);
-    setTimeout(() => setIsShutterFlashing(false), 120);
-
-    // Pause current video display cleanly
-    video.pause();
-
-    // Yield control to the browser so the freeze-frame and loading spinner render before heavy AI runs
-    setTimeout(() => {
-      onAddFace(canvas, dataUrl, currentLabel);
-      setIsAddingMore(false);
-    }, 60);
->>>>>>> ae0635a (maintenance view)
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -534,13 +500,8 @@ export function CameraCapture({
                     <button
                       type="button"
                       onClick={handleCapturePhoto}
-<<<<<<< HEAD
-                      disabled={!isCameraActive || isProcessing || detectionStatus === "detecting" || disabled}
+                      disabled={!isCameraActive || isCameraStarting || isProcessing || detectionStatus === "detecting" || disabled}
                       className="mt-4 px-5 py-2.5 bg-indigo-600 text-white rounded-xl font-medium text-xs hover:bg-indigo-700 active:bg-indigo-800 disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none disabled:shadow-none transition-colors flex items-center gap-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
-=======
-                      disabled={!isCameraActive || isCameraStarting || isProcessing || disabled}
-                      className="mt-4 px-5 py-2.5 bg-indigo-600 text-white rounded-xl font-medium text-xs hover:bg-indigo-700 active:bg-indigo-800 disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none disabled:shadow-none transition-all flex items-center gap-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
->>>>>>> ae0635a (maintenance view)
                     >
                       {isCameraStarting ? (
                         <>
@@ -576,13 +537,8 @@ export function CameraCapture({
                 <label
                   htmlFor={isProcessing || detectionStatus === "detecting" || disabled ? undefined : "face-upload-input"}
                   className={`flex flex-col items-center justify-center p-8 border-2 border-dashed rounded-xl transition-colors ${
-<<<<<<< HEAD
                     isProcessing || detectionStatus === "detecting" || disabled
                       ? "opacity-50 cursor-not-allowed border-zinc-200 dark:border-zinc-800 bg-zinc-100/40 dark:bg-zinc-800/10 pointer-events-none"
-=======
-                    isProcessing || disabled
-                      ? "opacity-60 cursor-not-allowed border-zinc-200 dark:border-zinc-800 bg-zinc-100/40 dark:bg-zinc-800/10 pointer-events-none"
->>>>>>> ae0635a (maintenance view)
                       : "border-zinc-200 dark:border-zinc-700 hover:border-indigo-500 dark:hover:border-indigo-400 cursor-pointer bg-zinc-50/50 dark:bg-zinc-800/20"
                   }`}
                 >
