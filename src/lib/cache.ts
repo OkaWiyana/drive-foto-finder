@@ -1,4 +1,4 @@
-import { get, set, clear } from "idb-keyval";
+import { get, set, keys, del } from "idb-keyval";
 import { FaceDetail } from "@/hooks/useFaceApi";
 
 const CACHE_PREFIX = "drive_face_v6_";
@@ -49,7 +49,11 @@ export async function setCachedFaces(
 
 export async function clearAllDescriptorCache(): Promise<void> {
   try {
-    await clear();
+    const allKeys = await keys();
+    const faceKeys = allKeys.filter(
+      (k) => typeof k === "string" && k.startsWith(CACHE_PREFIX),
+    );
+    await Promise.all(faceKeys.map((k) => del(k)));
   } catch (err) {
     console.warn("Gagal membersihkan cache IndexedDB:", err);
   }

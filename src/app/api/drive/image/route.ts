@@ -26,11 +26,28 @@ function extractFileIdFromUrl(urlStr: string): string | null {
   return null;
 }
 
+const ALLOWED_MIME_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/avif",
+]);
+
+const MAX_IMAGE_BYTES = 15 * 1024 * 1024; // 15 MB limit
+
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
     const targetUrl = searchParams.get("url");
     const rawFileId = searchParams.get("fileId");
+
+    // Validate fileId format to prevent path/query manipulation
+    if (rawFileId && !/^[a-zA-Z0-9_-]{10,}$/.test(rawFileId)) {
+      return NextResponse.json(
+        { error: "Format fileId tidak valid." },
+        { status: 400 },
+      );
+    }
 
     const effectiveFileId =
       rawFileId || (targetUrl ? extractFileIdFromUrl(targetUrl) : null);
@@ -47,7 +64,8 @@ export async function GET(request: NextRequest) {
     if (targetUrl) {
       try {
         const parsedUrl = new URL(targetUrl);
-        if (isAllowedHost(parsedUrl.hostname)) {
+        // Enforce HTTPS protocol and whitelist hostnames
+        if (parsedUrl.protocol === "https:" && isAllowedHost(parsedUrl.hostname)) {
           candidateUrls.push(targetUrl);
         }
       } catch {
@@ -78,21 +96,61 @@ export async function GET(request: NextRequest) {
           headers: {
             "User-Agent":
               "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            Accept:
-              "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+            Accept: "image/avif,image/webp,image/apng,image/jpeg,image/png,*/*;q=0.8",
           },
+          signal: AbortSignal.timeout(12000),
           next: { revalidate: 86400 },
         });
 
         if (imageRes.ok) {
-          const contentType =
-            imageRes.headers.get("content-type") || "image/jpeg";
+          // Check Content-Length to prevent OOM/DoS attacks
+          const contentLengthStr = imageRes.headers.get("content-length");
+          if (contentLengthStr) {
+            const contentLength = parseInt(contentLengthStr, 10);
+            if (contentLength > MAX_IMAGE_BYTES) {
+              return NextResponse.json(
+                { error: "Ukuran file melebihi batas aman (15MB)." },
+                { status: 413 },
+              );
+            }
+          }
+
+          // Whitelist safe raster image Content-Types to prevent XSS via SVG/HTML
+          const rawContentType = (
+            imageRes.headers.get("content-type") || "image/jpeg"
+          )
+            .split(";")[0]
+            .trim()
+            .toLowerCase();
+
+          const safeContentType = ALLOWED_MIME_TYPES.has(rawContentType)
+            ? rawContentType
+            : "image/jpeg";
+
+          // If the upstream returned HTML or SVG, reject to prevent stored/reflected XSS
+          if (rawContentType.includes("html") || rawContentType.includes("svg")) {
+            return NextResponse.json(
+              { error: "Format file bukan gambar yang didukung." },
+              { status: 415 },
+            );
+          }
+
           const imageArrayBuffer = await imageRes.arrayBuffer();
+
+          // Double check downloaded byte length
+          if (imageArrayBuffer.byteLength > MAX_IMAGE_BYTES) {
+            return NextResponse.json(
+              { error: "Ukuran file melebihi batas aman (15MB)." },
+              { status: 413 },
+            );
+          }
 
           return new NextResponse(imageArrayBuffer, {
             status: 200,
             headers: {
-              "Content-Type": contentType,
+              "Content-Type": safeContentType,
+              "X-Content-Type-Options": "nosniff",
+              "Content-Disposition": "inline",
               "Cache-Control":
                 "public, max-age=86400, stale-while-revalidate=604800",
               "Access-Control-Allow-Origin": "*",
@@ -105,7 +163,9 @@ export async function GET(request: NextRequest) {
         }
       } catch (err: unknown) {
         lastErrorMessage =
-          err instanceof Error ? err.message : "Kesalahan koneksi saat mengambil gambar.";
+          err instanceof Error
+            ? err.message
+            : "Kesalahan koneksi saat mengambil gambar.";
       }
     }
 

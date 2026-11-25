@@ -11,6 +11,7 @@ import {
   Plus,
   ArrowLeft,
   Sparkles,
+  Loader2,
 } from "lucide-react";
 
 export interface TargetFaceItem {
@@ -32,6 +33,7 @@ interface CameraCaptureProps {
   detectionStatus: "idle" | "detecting" | "success" | "error";
   errorMessage: string | null;
   disabled?: boolean;
+  onWarmupModel?: () => void;
 }
 
 export function CameraCapture({
@@ -42,17 +44,38 @@ export function CameraCapture({
   detectionStatus,
   errorMessage,
   disabled = false,
+  onWarmupModel,
 }: CameraCaptureProps) {
   const [mode, setMode] = useState<"camera" | "upload">("upload");
   const [isAddingMore, setIsAddingMore] = useState(false);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [isCameraActive, setIsCameraActive] = useState(false);
+<<<<<<< HEAD
   const [processingPreview, setProcessingPreview] = useState<string | null>(null);
+=======
+  const [isCameraStarting, setIsCameraStarting] = useState(false);
+  const [capturedFrame, setCapturedFrame] = useState<string | null>(null);
+  const [isShutterFlashing, setIsShutterFlashing] = useState(false);
+>>>>>>> ae0635a (maintenance view)
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const isStartingRef = useRef(false);
+
+  // Manage camera lifecycle based on detection status
+  useEffect(() => {
+    if (detectionStatus === "success") {
+      stopCamera();
+      setCapturedFrame(null);
+    } else if (detectionStatus === "error") {
+      // Resume video feed if face detection failed
+      setCapturedFrame(null);
+      if (videoRef.current && stream) {
+        videoRef.current.play().catch(() => {});
+      }
+    }
+  }, [detectionStatus, stream]);
 
   const isCaptureActive = targetFaces.length === 0 || isAddingMore;
 
@@ -73,16 +96,31 @@ export function CameraCapture({
     }
     setStream(null);
     setIsCameraActive(false);
+<<<<<<< HEAD
   }, []);
+=======
+    setIsCameraStarting(false);
+  }, [stream]);
+>>>>>>> ae0635a (maintenance view)
 
   const startCamera = useCallback(async () => {
     if (isStartingRef.current) return;
     isStartingRef.current = true;
+    setIsCameraStarting(true);
     setCameraError(null);
 
+<<<<<<< HEAD
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
+=======
+    // Warm up AI models in background during camera hardware initialization
+    onWarmupModel?.();
+
+    if (stream) {
+      stream.getTracks().forEach((t) => t.stop());
+      setStream(null);
+>>>>>>> ae0635a (maintenance view)
     }
 
     try {
@@ -100,7 +138,7 @@ export function CameraCapture({
       setIsCameraActive(true);
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream;
-        videoRef.current.play().catch(() => {});
+        await videoRef.current.play().catch(() => {});
       }
     } catch (err: unknown) {
       const msg =
@@ -111,6 +149,7 @@ export function CameraCapture({
       setIsCameraActive(false);
     } finally {
       isStartingRef.current = false;
+      setIsCameraStarting(false);
     }
   }, []);
 
@@ -157,15 +196,32 @@ export function CameraCapture({
     if (
       !videoRef.current ||
       isProcessing ||
+<<<<<<< HEAD
       detectionStatus === "detecting" ||
       processingPreview
     )
       return;
 
+=======
+      !isCameraActive ||
+      isCameraStarting
+    )
+      return;
+>>>>>>> ae0635a (maintenance view)
     const video = videoRef.current;
+    if (video.videoWidth === 0 || video.videoHeight === 0) return;
+
+    // Scale canvas to optimal 640px max dimension for fast, responsive AI inference (~4x faster)
+    const vw = video.videoWidth || 640;
+    const vh = video.videoHeight || 480;
+    const maxDim = 640;
+    const scale = Math.min(1, maxDim / Math.max(vw, vh));
+    const targetW = Math.round(vw * scale);
+    const targetH = Math.round(vh * scale);
+
     const canvas = document.createElement("canvas");
-    canvas.width = video.videoWidth || 640;
-    canvas.height = video.videoHeight || 480;
+    canvas.width = targetW;
+    canvas.height = targetH;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
@@ -174,11 +230,29 @@ export function CameraCapture({
     ctx.scale(-1, 1);
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
+<<<<<<< HEAD
     const dataUrl = canvas.toDataURL("image/jpeg", 0.95);
     isWaitingForDetectionRef.current = true;
     setProcessingPreview(dataUrl);
     stopCamera();
     onAddFace(canvas, dataUrl, currentLabel);
+=======
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
+
+    // Trigger instant tactile shutter flash & freeze frame
+    setIsShutterFlashing(true);
+    setCapturedFrame(dataUrl);
+    setTimeout(() => setIsShutterFlashing(false), 120);
+
+    // Pause current video display cleanly
+    video.pause();
+
+    // Yield control to the browser so the freeze-frame and loading spinner render before heavy AI runs
+    setTimeout(() => {
+      onAddFace(canvas, dataUrl, currentLabel);
+      setIsAddingMore(false);
+    }, 60);
+>>>>>>> ae0635a (maintenance view)
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -401,26 +475,89 @@ export function CameraCapture({
                 ) : (
                   <div className="w-full flex flex-col items-center">
                     <div className="relative w-full max-w-sm aspect-square bg-zinc-950 rounded-xl overflow-hidden shadow-inner flex items-center justify-center">
-                      <video
-                        ref={videoRef}
-                        autoPlay
-                        playsInline
-                        muted
-                        onLoadedMetadata={(e) => {
-                          (e.target as HTMLVideoElement).play().catch(() => {});
-                        }}
-                        className="w-full h-full object-cover -scale-x-100"
-                      />
-                      <div className="absolute inset-8 border-2 border-dashed border-white/40 rounded-full pointer-events-none" />
+                      {capturedFrame ? (
+                        <img
+                          src={capturedFrame}
+                          alt="Foto wajah Anda"
+                          className="w-full h-full object-cover -scale-x-100"
+                        />
+                      ) : (
+                        <video
+                          ref={videoRef}
+                          autoPlay
+                          playsInline
+                          muted
+                          onLoadedMetadata={(e) => {
+                            (e.target as HTMLVideoElement).play().catch(() => {});
+                          }}
+                          className="w-full h-full object-cover -scale-x-100"
+                        />
+                      )}
+
+                      {/* Camera Initializing Overlay */}
+                      {isCameraStarting && (
+                        <div className="absolute inset-0 bg-zinc-950/90 flex flex-col items-center justify-center text-zinc-300 z-20 gap-3">
+                          <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
+                          <span className="text-xs font-medium">Menghubungkan ke kamera...</span>
+                        </div>
+                      )}
+
+                      {/* Oval Face Guide */}
+                      {!capturedFrame && !isCameraStarting && (
+                        <div className="absolute inset-8 border-2 border-dashed border-white/40 rounded-full pointer-events-none" />
+                      )}
+
+                      {/* Instant Tactile Shutter Flash */}
+                      {isShutterFlashing && (
+                        <div className="absolute inset-0 bg-white z-30 pointer-events-none animate-out fade-out duration-150" />
+                      )}
+
+                      {/* Analyzing Overlay with animated scan ring when processing */}
+                      {isProcessing && (
+                        <div className="absolute inset-0 bg-black/70 backdrop-blur-xs flex flex-col items-center justify-center text-white z-20 animate-in fade-in duration-150">
+                          <div className="relative mb-3 flex items-center justify-center">
+                            <div className="w-14 h-14 rounded-full border-2 border-indigo-400/50 animate-ping absolute" />
+                            <div className="p-3 bg-indigo-600 text-white rounded-full shadow-lg relative z-10">
+                              <RefreshCw className="w-6 h-6 animate-spin" />
+                            </div>
+                          </div>
+                          <span className="text-xs sm:text-sm font-semibold tracking-wide drop-shadow">
+                            Menganalisis Foto Wajah...
+                          </span>
+                          <span className="text-[11px] text-zinc-300 mt-0.5">
+                            Mengekstrak 128 fitur biometrik wajah
+                          </span>
+                        </div>
+                      )}
                     </div>
+
                     <button
                       type="button"
                       onClick={handleCapturePhoto}
+<<<<<<< HEAD
                       disabled={!isCameraActive || isProcessing || detectionStatus === "detecting" || disabled}
                       className="mt-4 px-5 py-2.5 bg-indigo-600 text-white rounded-xl font-medium text-xs hover:bg-indigo-700 active:bg-indigo-800 disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none disabled:shadow-none transition-colors flex items-center gap-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+=======
+                      disabled={!isCameraActive || isCameraStarting || isProcessing || disabled}
+                      className="mt-4 px-5 py-2.5 bg-indigo-600 text-white rounded-xl font-medium text-xs hover:bg-indigo-700 active:bg-indigo-800 disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none disabled:shadow-none transition-all flex items-center gap-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+>>>>>>> ae0635a (maintenance view)
                     >
-                      <Camera className="w-4 h-4" />
-                      Ambil Foto Sekarang
+                      {isCameraStarting ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin text-white" />
+                          <span>Menyiapkan Kamera...</span>
+                        </>
+                      ) : isProcessing ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 animate-spin text-white" />
+                          <span>Mengekstrak Wajah...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Camera className="w-4 h-4" />
+                          <span>Ambil Foto Sekarang</span>
+                        </>
+                      )}
                     </button>
                   </div>
                 )}
@@ -439,20 +576,38 @@ export function CameraCapture({
                 <label
                   htmlFor={isProcessing || detectionStatus === "detecting" || disabled ? undefined : "face-upload-input"}
                   className={`flex flex-col items-center justify-center p-8 border-2 border-dashed rounded-xl transition-colors ${
+<<<<<<< HEAD
                     isProcessing || detectionStatus === "detecting" || disabled
                       ? "opacity-50 cursor-not-allowed border-zinc-200 dark:border-zinc-800 bg-zinc-100/40 dark:bg-zinc-800/10 pointer-events-none"
+=======
+                    isProcessing || disabled
+                      ? "opacity-60 cursor-not-allowed border-zinc-200 dark:border-zinc-800 bg-zinc-100/40 dark:bg-zinc-800/10 pointer-events-none"
+>>>>>>> ae0635a (maintenance view)
                       : "border-zinc-200 dark:border-zinc-700 hover:border-indigo-500 dark:hover:border-indigo-400 cursor-pointer bg-zinc-50/50 dark:bg-zinc-800/20"
                   }`}
                 >
-                  <div className="p-3 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 rounded-full mb-2">
-                    <Upload className="w-5 h-5" />
-                  </div>
-                  <span className="text-xs font-medium text-zinc-800 dark:text-zinc-200">
-                    Pilih foto wajah dari perangkat
-                  </span>
-                  <span className="text-[11px] text-zinc-400 dark:text-zinc-500 mt-1">
-                    Format JPG, PNG, atau WebP (Foto sendiri tampak {currentLabel})
-                  </span>
+                  {isProcessing ? (
+                    <>
+                      <div className="p-3 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 rounded-full mb-2">
+                        <RefreshCw className="w-5 h-5 animate-spin" />
+                      </div>
+                      <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-400">
+                        Sedang Menganalisis Foto Wajah...
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <div className="p-3 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 rounded-full mb-2">
+                        <Upload className="w-5 h-5" />
+                      </div>
+                      <span className="text-xs font-medium text-zinc-800 dark:text-zinc-200">
+                        Pilih foto wajah dari perangkat
+                      </span>
+                      <span className="text-[11px] text-zinc-400 dark:text-zinc-500 mt-1">
+                        Format JPG, PNG, atau WebP (Foto sendiri tampak {currentLabel})
+                      </span>
+                    </>
+                  )}
                 </label>
               </div>
             )}
