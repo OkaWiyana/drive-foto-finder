@@ -115,9 +115,47 @@ export function useFaceApi() {
     }
   }, []);
 
-  // Preload models automatically on mount
+  // Defer model loading until idle or user interaction to optimize initial page load & PageSpeed metrics
   useEffect(() => {
-    loadModels();
+    let timerId: ReturnType<typeof setTimeout> | null = null;
+    let idleId: number | null = null;
+
+    const triggerLoad = () => {
+      window.removeEventListener("pointerdown", triggerLoad);
+      window.removeEventListener("keydown", triggerLoad);
+      window.removeEventListener("touchstart", triggerLoad);
+      if (timerId) clearTimeout(timerId);
+      if (idleId && typeof window.cancelIdleCallback === "function") {
+        window.cancelIdleCallback(idleId);
+      }
+      loadModels();
+    };
+
+    window.addEventListener("pointerdown", triggerLoad, { once: true, passive: true });
+    window.addEventListener("keydown", triggerLoad, { once: true, passive: true });
+    window.addEventListener("touchstart", triggerLoad, { once: true, passive: true });
+
+    // Fallback: preload after 3.5 seconds of idle time if no interaction occurs
+    if (typeof window.requestIdleCallback === "function") {
+      idleId = window.requestIdleCallback(
+        () => {
+          timerId = setTimeout(triggerLoad, 3500);
+        },
+        { timeout: 5000 },
+      );
+    } else {
+      timerId = setTimeout(triggerLoad, 3500);
+    }
+
+    return () => {
+      window.removeEventListener("pointerdown", triggerLoad);
+      window.removeEventListener("keydown", triggerLoad);
+      window.removeEventListener("touchstart", triggerLoad);
+      if (timerId) clearTimeout(timerId);
+      if (idleId && typeof window.cancelIdleCallback === "function") {
+        window.cancelIdleCallback(idleId);
+      }
+    };
   }, [loadModels]);
 
   const extractSingleDescriptor = useCallback(

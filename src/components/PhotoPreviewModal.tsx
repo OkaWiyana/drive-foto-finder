@@ -83,12 +83,12 @@ export function PhotoPreviewModal({ photo, onClose }: PhotoPreviewModalProps) {
               <button
                 type="button"
                 onClick={() => setShowFaceBoxes(!showFaceBoxes)}
+                aria-label={showFaceBoxes ? "Kotak Wajah: ON" : "Kotak Wajah: OFF"}
                 className={`px-2.5 py-1 text-[11px] rounded-lg border font-medium transition-colors flex items-center gap-1.5 ${
                   showFaceBoxes
                     ? "bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-800"
                     : "bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-700"
                 }`}
-                title="Tampilkan / sembunyikan kotak penanda wajah"
               >
                 <ScanFace className="w-3.5 h-3.5" />
                 <span>{showFaceBoxes ? "Kotak Wajah: ON" : "Kotak Wajah: OFF"}</span>

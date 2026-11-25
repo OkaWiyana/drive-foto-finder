@@ -41,21 +41,24 @@ export async function GET(request: NextRequest) {
     const seenFileIds = new Set<string>();
     const queue: string[] = [folderId];
     const visitedFolders = new Set<string>([folderId]);
-    const MAX_FOLDERS = 60; // Crawl up to 60 subfolders
+    const MAX_FOLDERS = 12; // Safe crawl limit for serverless execution timeouts
     let scannedFolderCount = 0;
 
     while (queue.length > 0 && scannedFolderCount < MAX_FOLDERS) {
       const currentFolderId = queue.shift()!;
       scannedFolderCount++;
 
+      // Guard folder ID format
+      if (!/^[a-zA-Z0-9_-]{10,}$/.test(currentFolderId)) {
+        continue;
+      }
+
       let pageToken: string | null = null;
       let pageCount = 0;
-      const maxPagesPerFolder = 5;
+      const maxPagesPerFolder = 2; // Up to 2,000 files per folder
 
       do {
         pageCount++;
-        // Note: Google Drive API strictly prohibits 'or' between parents.
-        // Each query MUST use a single parent ID!
         const queryParams = new URLSearchParams({
           q: `'${currentFolderId}' in parents and trashed = false`,
           fields:
@@ -72,6 +75,7 @@ export async function GET(request: NextRequest) {
           `https://www.googleapis.com/drive/v3/files?${queryParams.toString()}`,
           {
             headers: { Accept: "application/json" },
+            signal: AbortSignal.timeout(10000),
             next: { revalidate: 60 },
           },
         );
@@ -87,7 +91,7 @@ export async function GET(request: NextRequest) {
                 {
                   success: false,
                   error:
-                    "Folder tidak ditemukan. Pastikan folder sudah disetel ke 'Siapa saja yang memiliki link dapat melihat' (Public).",
+                    "Folder tidak ditemukan. Pastikan folder disetel ke 'Siapa saja yang memiliki link dapat melihat' (Publik).",
                 },
                 { status: 404 },
               );
@@ -97,9 +101,8 @@ export async function GET(request: NextRequest) {
               return NextResponse.json(
                 {
                   success: false,
-                  error: rawMessage
-                    ? `Akses ditolak (${rawMessage}). Pastikan folder Google Drive disetel ke 'Siapa saja yang memiliki link dapat melihat' (Publik).`
-                    : "Akses ditolak oleh Google. Pastikan folder publik dan API key aktif.",
+                  error:
+                    "Akses ditolak oleh Google. Pastikan folder berstatus publik dan kuota Google Drive API aktif.",
                 },
                 { status: 403 },
               );
@@ -108,13 +111,12 @@ export async function GET(request: NextRequest) {
             return NextResponse.json(
               {
                 success: false,
-                error: rawMessage || `Google Drive error (${driveRes.status})`,
+                error: "Gagal membaca folder Google Drive. Silakan periksa kembali tautan Anda.",
               },
               { status: driveRes.status },
             );
           } else {
-            // If a nested subfolder is restricted, skip it and continue with remaining folders
-            console.warn(`Subfolder ${currentFolderId} dilewati:`, rawMessage);
+            // Nested subfolder is restricted, skip and continue
             break;
           }
         }

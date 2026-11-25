@@ -65,7 +65,14 @@ export function ScanningProgress({
       </div>
 
       {/* Progress bar */}
-      <div className="w-full bg-zinc-100 dark:bg-zinc-800 rounded-full h-2.5 overflow-hidden">
+      <div
+        role="progressbar"
+        aria-valuenow={percentage}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-label="Progress pemindaian foto"
+        className="w-full bg-zinc-100 dark:bg-zinc-800 rounded-full h-2.5 overflow-hidden"
+      >
         <div
           className={`h-full transition-all duration-300 rounded-full ${
             isFinished

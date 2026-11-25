@@ -79,6 +79,8 @@ export function DriveInput({
         <div className="flex flex-col sm:flex-row gap-2">
           <div className="relative flex-1">
             <input
+              id="drive-folder-url"
+              aria-label="Link folder Google Drive publik"
               type="text"
               value={inputUrl}
               onChange={(e) => {
